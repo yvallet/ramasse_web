@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Sauvegarde de la base{% endblock %}
+{% block content %}
+<h2>Sauvegarde de la base</h2>
+<p class="aide">
+  Cree un dump SQL complet de la base (structure et donnees, toutes les
+  tables), via <code>mysqldump</code>, enregistre dans le meme repertoire
+  que les exports CSV : <code>{{ repertoire }}</code>. Le fichier est nomme
+  <code>sauvegarde-jjmmaaaa_hhmm.sql</code>.
+</p>
+
+<form method="post" class="actions">
+  <button type="submit" class="bouton bouton-valide">Creer une sauvegarde maintenant</button>
+</form>
+
+<h3>Sauvegardes existantes</h3>
+<table class="grille-admin">
+  <thead>
+    <tr><th>Fichier</th><th>Date</th><th>Taille</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for s in sauvegardes %}
+      <tr>
+        <td>{{ s.nom }}</td>
+        <td>{{ s.date.strftime("%d/%m/%Y %H:%M") }}</td>
+        <td>{{ "%.1f"|format(s.taille / 1048576) }} Mo</td>
+        <td class="col-actions">
+          <a href="{{ url_for('admin.sauvegarde_telecharger', nom=s.nom) }}" class="bouton">Telecharger</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4">Aucune sauvegarde pour l'instant.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -39,3 +39,9 @@ class Config:
     # (equivalent Repertoire_csv / code_BA de param_ramasse.txt)
     CSV_EXPORT_DIR = os.environ.get("CSV_EXPORT_DIR", os.path.join(os.getcwd(), "export_csv"))
     CODE_BA = os.environ.get("CODE_BA", "58")
+
+    # Sauvegarde SQL complete de la base (fonctionnalite absente de
+    # l'original, voir services/sauvegarde.py) : chemin de l'executable
+    # mysqldump, si different de celui trouve automatiquement dans le PATH
+    # systeme (utile notamment sous Windows).
+    MYSQLDUMP_PATH = os.environ.get("MYSQLDUMP_PATH", "mysqldump")

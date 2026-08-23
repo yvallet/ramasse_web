@@ -10,14 +10,22 @@ Ecrans d'administration portes depuis ramasse10_sql.py :
 Regroupes dans un Blueprint separe de app.py (qui reste centre sur
 l'ecran de saisie journaliere) pour garder chaque fichier lisible.
   - Epuration de l'historique (fenetre10 -> epuration()/valider_epur())
+  - Sauvegarde SQL complete de la base (fonctionnalite absente de
+    l'original, voir services/sauvegarde.py)
 """
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
+import os
+
+from flask import (
+    Blueprint, render_template, request, redirect, url_for, flash,
+    current_app, send_from_directory, abort,
+)
 
 import db
 from services import magasins as sm
 from services import parametres as sp
 from services import epuration as se
 from services import dateutils as du
+from services import sauvegarde as ss
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -27,7 +35,6 @@ SLUGS = {"fournisseurs": "F", "articles": "A", "types": "T"}
 
 def _code_type_ou_404(slug):
     if slug not in SLUGS:
-        from flask import abort
         abort(404)
     return SLUGS[slug]
 
@@ -264,3 +271,39 @@ def epuration():
         date_limite=date_norm,
         confirmation={"date_norm": date_norm, "nb": nb},
     )
+
+
+# --------------------------------------------------------------------- #
+# Sauvegarde SQL complete de la base (mysqldump)
+# --------------------------------------------------------------------- #
+
+@admin_bp.route("/sauvegarde", methods=["GET", "POST"])
+def sauvegarde():
+    repertoire = current_app.config["CSV_EXPORT_DIR"]
+
+    if request.method == "POST":
+        try:
+            chemin = ss.creer(current_app.config, repertoire)
+            current_app.logger.info("Sauvegarde SQL creee : %s", chemin)
+            flash("Sauvegarde creee : %s" % os.path.basename(chemin), "ok")
+        except RuntimeError as e:
+            current_app.logger.error("Echec de la sauvegarde SQL : %s", e)
+            flash(str(e), "error")
+        return redirect(url_for("admin.sauvegarde"))
+
+    return render_template(
+        "admin_sauvegarde.html", repertoire=repertoire, sauvegardes=ss.lister(repertoire)
+    )
+
+
+@admin_bp.route("/sauvegarde/<nom>/telecharger")
+def sauvegarde_telecharger(nom):
+    nom = os.path.basename(nom)
+    if not (nom.startswith(ss.PREFIXE) and nom.endswith(ss.SUFFIXE)):
+        abort(404)
+
+    repertoire = current_app.config["CSV_EXPORT_DIR"]
+    if not os.path.isfile(os.path.join(repertoire, nom)):
+        abort(404)
+
+    return send_from_directory(repertoire, nom, as_attachment=True)

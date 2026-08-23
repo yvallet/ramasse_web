@@ -43,11 +43,28 @@ directement au clic sur "Valider" sans annoncer ce nombre au prealable -
 une purge etant irreversible et potentiellement large, une confirmation
 minimale semblait justifiee.
 
+**Lot 4 - sauvegarde SQL de la base** (`services/sauvegarde.py`) :
+**fonctionnalite absente de l'original** - `ramasse10_sql.py` ne fait
+aucune sauvegarde automatisee de la base (seul l'export CSV VIF existe,
+qui ne couvre que les lignes de la journee, pas la base entiere). L'ecran
+"Sauvegarde" lance un dump SQL complet (structure + toutes les donnees,
+via `mysqldump`), enregistre dans le meme repertoire que les exports CSV
+(`CSV_EXPORT_DIR`), sous le nom `sauvegarde-jjmmaaaa_hhmm.sql` ; la liste
+des sauvegardes existantes s'affiche avec leur date et leur taille, avec
+un lien de telechargement pour chacune. Le mot de passe MySQL est transmis
+a `mysqldump` par variable d'environnement (jamais sur la ligne de
+commande) pour ne pas apparaitre dans la liste des processus du systeme.
+
+**Prerequis** : `mysqldump` doit etre installe sur la machine qui fait
+tourner l'application (fourni avec MySQL Server / MySQL Workbench sous
+Windows) et accessible dans le PATH, ou son chemin complet renseigne dans
+`.env` via `MYSQLDUMP_PATH` (voir `.env.example`).
+
 ## Ce qui n'est PAS encore dans cette version (a faire dans un 2e temps, si besoin)
 
-Sauvegarde et impression d'etiquettes / bon de reception PDF (fonctions de
+Impression d'etiquettes et de bon de reception PDF (fonctions de
 `outils.py` non liees a la saisie journaliere ni a la gestion des
-magasins/fournisseurs/articles/types/historique : FTP/SFTP, `PDFBR`,
+magasins/fournisseurs/articles/types/historique/sauvegarde : `PDFBR`,
 `etiquette2` - elles n'ont pas ete reprises pour l'instant).
 
 ## Installation
@@ -107,22 +124,25 @@ des routes Flask, pour la saisie journaliere (`tests/test_workflow.py`) et
 pour les ecrans d'administration (`tests/test_admin.py`) : validation des
 formulaires magasin (article/fournisseur inconnu, doublon de couple
 type+magasin...), creation/modification/suppression d'un magasin,
-ajout/modification/suppression de fournisseurs/articles/types, et
+ajout/modification/suppression de fournisseurs/articles/types,
 epuration de l'historique (calcul du nombre de lignes concernees,
 confirmation, suppression effective, absence de filtre par type de
-ramasse). Comme cet environnement de developpement n'a pas acces a un vrai
-serveur MySQL, les tests utilisent une base sqlite3 en memoire qui rejoue
-exactement les memes requetes SQL (`tests/db_shim.py`) :
+ramasse), et sauvegarde SQL (nom de fichier genere, liste des sauvegardes,
+gestion des echecs mysqldump, mot de passe jamais expose sur la ligne de
+commande, telechargement). Comme cet environnement de developpement n'a
+acces ni a un vrai serveur MySQL ni a `mysqldump`, les tests utilisent une
+base sqlite3 en memoire qui rejoue exactement les memes requetes SQL
+(`tests/db_shim.py`), et un `mysqldump` simule pour la sauvegarde :
 
 ```bash
 python3 tests/test_workflow.py
 python3 tests/test_admin.py
 ```
 
-Les 50 tests (14 + 36) passent. Avant la mise en production, faites tout de
-meme un essai manuel complet avec votre vraie base MySQL locale (le
-connecteur MySQL n'a pas pu etre installe dans cet environnement de
-developpement, faute d'acces reseau — a verifier avec
+Les 63 tests (14 + 49) passent. Avant la mise en production, faites tout
+de meme un essai manuel complet avec votre vraie base MySQL locale et un
+vrai `mysqldump` (le connecteur MySQL n'a pas pu etre installe dans cet
+environnement de developpement, faute d'acces reseau — a verifier avec
 `pip install -r requirements.txt` chez vous).
 
 ## Differences volontaires par rapport a l'original

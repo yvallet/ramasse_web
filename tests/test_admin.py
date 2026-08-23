@@ -1,18 +1,22 @@
 # coding: utf8
 """
 Tests des ecrans d'administration (magasins / fournisseurs / articles /
-types de ramasse / epuration de l'historique), ajoutes a la suite de
-ramasse10_sql.py : magasin()/valid_mag()/sup_mag(),
+types de ramasse / epuration de l'historique / sauvegarde SQL), ajoutes a
+la suite de ramasse10_sql.py : magasin()/valid_mag()/sup_mag(),
 fenetre_fournisseurs()/fenetre_articles()/fenetre_types()/ajout_cli()/
-sup_cli(), et epuration()/valider_epur().
+sup_cli(), epuration()/valider_epur(), et la sauvegarde SQL (fonction
+absente de l'original, voir services/sauvegarde.py).
 
 A lancer avec : python3 tests/test_admin.py
 (ou via test_workflow.py qui importe deja le shim mysql.connector)
 """
 import sys
 import os
+import shutil
+import tempfile
 import types
 import unittest
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -28,6 +32,7 @@ from tests.db_shim import build_test_db  # noqa: E402
 from services import parametres as sp  # noqa: E402
 from services import magasins as sm  # noqa: E402
 from services import epuration as se  # noqa: E402
+from services import sauvegarde as sv  # noqa: E402
 
 
 class ParametresTests(unittest.TestCase):
@@ -217,6 +222,86 @@ class EpurationTests(unittest.TestCase):
         self.assertEqual(nb, 3)
 
 
+class _FauxResultat:
+    """Imite subprocess.CompletedProcess pour les tests (pas de vrai mysqldump ici)."""
+
+    def __init__(self, returncode=0, stderr=b""):
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+class SauvegardeTests(unittest.TestCase):
+    """
+    services/sauvegarde.py - dump SQL complet via mysqldump. Comme cet
+    environnement de test n'a pas de vrai mysqldump/serveur MySQL, la
+    fonction `executer` (equivalent de subprocess.run) est simulee.
+    """
+
+    def setUp(self):
+        self.dossier = tempfile.mkdtemp()
+        self.config = {
+            "MYSQL_HOST": "localhost", "MYSQL_PORT": 3306, "MYSQL_USER": "root",
+            "MYSQL_PASSWORD": "secret", "MYSQL_DB": "yvallet_base", "MYSQLDUMP_PATH": "mysqldump",
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.dossier, ignore_errors=True)
+
+    def test_nom_fichier_au_format_attendu(self):
+        horodatage = datetime(2026, 1, 5, 8, 7)
+        self.assertEqual(sv.nom_fichier(horodatage), "sauvegarde-05012026_0807.sql")
+
+    def test_lister_vide_si_dossier_absent(self):
+        self.assertEqual(sv.lister(os.path.join(self.dossier, "inexistant")), [])
+
+    def test_lister_ne_garde_que_les_sauvegardes_triees_par_date_desc(self):
+        for nom in ("sauvegarde-01012026_0800.sql", "sauvegarde-02012026_0800.sql", "autre_fichier.csv"):
+            with open(os.path.join(self.dossier, nom), "w") as f:
+                f.write("x")
+        noms = [e["nom"] for e in sv.lister(self.dossier)]
+        self.assertEqual(noms, ["sauvegarde-02012026_0800.sql", "sauvegarde-01012026_0800.sql"])
+
+    def test_creer_ecrit_le_dump_et_renvoie_le_chemin(self):
+        def executer_ok(commande, stdout, stderr, env):
+            stdout.write(b"-- dump mysql --\ninsert into histo ...;\n")
+            self.assertIn("secret", env.get("MYSQL_PWD", ""))  # mot de passe transmis par env, pas par argv
+            self.assertNotIn("secret", commande)  # jamais sur la ligne de commande
+            return _FauxResultat(returncode=0)
+
+        chemin = sv.creer(self.config, self.dossier, executer=executer_ok, horodatage=datetime(2026, 1, 5, 8, 7))
+        self.assertEqual(os.path.basename(chemin), "sauvegarde-05012026_0807.sql")
+        self.assertTrue(os.path.isfile(chemin))
+        with open(chemin, "rb") as f:
+            self.assertIn(b"dump mysql", f.read())
+
+    def test_creer_leve_et_nettoie_si_mysqldump_absent(self):
+        def executer_absent(*a, **kw):
+            raise FileNotFoundError()
+
+        with self.assertRaises(RuntimeError) as ctx:
+            sv.creer(self.config, self.dossier, executer=executer_absent, horodatage=datetime(2026, 1, 5, 8, 7))
+        self.assertIn("introuvable", str(ctx.exception))
+        self.assertEqual(sv.lister(self.dossier), [])  # pas de fichier partiel laisse trainer
+
+    def test_creer_leve_et_nettoie_si_mysqldump_echoue(self):
+        def executer_echec(commande, stdout, stderr, env):
+            stdout.write(b"contenu partiel")
+            return _FauxResultat(returncode=1, stderr=b"Access denied for user")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            sv.creer(self.config, self.dossier, executer=executer_echec, horodatage=datetime(2026, 1, 5, 8, 7))
+        self.assertIn("Access denied", str(ctx.exception))
+        self.assertEqual(sv.lister(self.dossier), [])
+
+    def test_creer_leve_si_fichier_vide(self):
+        def executer_vide(commande, stdout, stderr, env):
+            return _FauxResultat(returncode=0)  # rien ecrit
+
+        with self.assertRaises(RuntimeError) as ctx:
+            sv.creer(self.config, self.dossier, executer=executer_vide, horodatage=datetime(2026, 1, 5, 8, 7))
+        self.assertIn("vide", str(ctx.exception))
+
+
 class AdminRoutesSmokeTests(unittest.TestCase):
     """Verifie que les routes Flask du Blueprint admin s'enchainent sans erreur."""
 
@@ -225,8 +310,12 @@ class AdminRoutesSmokeTests(unittest.TestCase):
         import app as app_module
         self.app_module = app_module
         app_module.db.get_db = lambda: self.conn
-        app_module.app.config.update(TESTING=True)
+        self.dossier_csv = tempfile.mkdtemp()
+        app_module.app.config.update(TESTING=True, CSV_EXPORT_DIR=self.dossier_csv)
         self.client = app_module.app.test_client()
+
+    def tearDown(self):
+        shutil.rmtree(self.dossier_csv, ignore_errors=True)
 
     def test_liste_magasins(self):
         r = self.client.get("/admin/magasins")
@@ -320,6 +409,66 @@ class AdminRoutesSmokeTests(unittest.TestCase):
         r = self.client.post("/admin/epuration", data={"date_limite": "01/01/2020", "action": "calculer"})
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Aucune ligne", r.data)
+
+    def test_sauvegarde_liste_les_fichiers_existants(self):
+        with open(os.path.join(self.dossier_csv, "sauvegarde-01012026_0800.sql"), "w") as f:
+            f.write("-- dump --")
+        with open(os.path.join(self.dossier_csv, "notes.txt"), "w") as f:
+            f.write("pas une sauvegarde")
+
+        r = self.client.get("/admin/sauvegarde")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"sauvegarde-01012026_0800.sql", r.data)
+        self.assertNotIn(b"notes.txt", r.data)
+
+    def test_sauvegarde_creation_reussie(self):
+        import services.sauvegarde as sauvegarde_module
+        chemin_attendu = os.path.join(self.dossier_csv, "sauvegarde-05012026_0807.sql")
+        with open(chemin_attendu, "w") as f:
+            f.write("-- dump --")
+        original = sauvegarde_module.creer
+        sauvegarde_module.creer = lambda config, repertoire, **kw: chemin_attendu
+        try:
+            r = self.client.post("/admin/sauvegarde", follow_redirects=True)
+        finally:
+            sauvegarde_module.creer = original
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"sauvegarde-05012026_0807.sql", r.data)
+
+    def test_sauvegarde_echec_affiche_le_message_d_erreur(self):
+        import services.sauvegarde as sauvegarde_module
+
+        def echoue(config, repertoire, **kw):
+            raise RuntimeError("mysqldump est introuvable.")
+
+        original = sauvegarde_module.creer
+        sauvegarde_module.creer = echoue
+        try:
+            r = self.client.post("/admin/sauvegarde", follow_redirects=True)
+        finally:
+            sauvegarde_module.creer = original
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"mysqldump est introuvable", r.data)
+
+    def test_sauvegarde_telechargement(self):
+        chemin = os.path.join(self.dossier_csv, "sauvegarde-01012026_0800.sql")
+        with open(chemin, "w") as f:
+            f.write("-- contenu du dump --")
+
+        r = self.client.get("/admin/sauvegarde/sauvegarde-01012026_0800.sql/telecharger")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b"contenu du dump", r.data)
+        r.close()  # libere le fichier envoye par send_from_directory (evite un ResourceWarning en test)
+
+    def test_sauvegarde_telechargement_refuse_fichier_hors_motif(self):
+        with open(os.path.join(self.dossier_csv, "notes.txt"), "w") as f:
+            f.write("x")
+        r = self.client.get("/admin/sauvegarde/notes.txt/telecharger")
+        self.assertEqual(r.status_code, 404)
+
+    def test_sauvegarde_telechargement_fichier_absent(self):
+        r = self.client.get("/admin/sauvegarde/sauvegarde-01012026_0800.sql/telecharger")
+        self.assertEqual(r.status_code, 404)
 
 
 if __name__ == "__main__":
