@@ -20,7 +20,11 @@ body {
   color: #fff;
   padding: 0.75rem 1.5rem;
 }
-.topbar h1 { margin: 0; font-size: 1.3rem; }
+.topbar h1 { margin: 0; font-size: 1.3rem; display: inline-block; }
+.topbar h1 a { color: #fff; text-decoration: none; }
+.nav-admin { display: inline-flex; gap: 1.1rem; margin-left: 2rem; flex-wrap: wrap; }
+.nav-admin a { color: #fff; text-decoration: none; font-size: 0.9rem; opacity: 0.9; }
+.nav-admin a:hover { opacity: 1; text-decoration: underline; }
 
 .conteneur { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
 
@@ -90,3 +94,22 @@ table.grille th { background: var(--bleu); color: #fff; }
 table.grille input[type=text] { width: 6.5rem; padding: 0.3rem; text-align: right; }
 table.grille td.total { text-align: right; font-weight: bold; background: #fafafa; }
 input.qte.alerte, input.rebut.alerte { border-color: var(--rouge); background: #fdecea; }
+
+/* Ecrans d'administration (magasins / fournisseurs / articles / types) */
+.entete-liste { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.entete-liste h2 { margin: 0; }
+
+table.grille-admin { width: 100%; border-collapse: collapse; background: #fff; margin-bottom: 1.5rem; }
+table.grille-admin th, table.grille-admin td { border: 1px solid var(--bord); padding: 0.5rem 0.6rem; text-align: left; }
+table.grille-admin th { background: var(--bleu); color: #fff; }
+table.grille-admin td.col-actions { white-space: nowrap; width: 1%; }
+table.grille-admin td.col-actions form { display: inline-block; margin-left: 0.4rem; }
+table.grille-admin input[type=text] { width: 100%; padding: 0.3rem; }
+
+.aide { color: #555; font-size: 0.9rem; margin-top: -0.5rem; }
+
+.champs-entete { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: flex-end; background: #fff;
+  border: 1px solid var(--bord); border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+.champ-case label { display: flex; align-items: center; gap: 0.4rem; font-weight: normal; }
+.champ-jours .jours { display: flex; gap: 0.75rem; }
+.champ-jours label.jour { display: flex; flex-direction: column; align-items: center; font-weight: normal; font-size: 0.85rem; }

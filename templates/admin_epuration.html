@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Epuration de l'historique{% endblock %}
+{% block content %}
+<h2>Epuration de l'historique</h2>
+<p class="aide">
+  Supprime definitivement de l'historique (table <code>histo</code>) toutes
+  les lignes de ramasse anterieures a la date choisie - tous types de
+  ramasse et tous magasins confondus. Cette action est irreversible.
+</p>
+
+<form method="post" class="champs-entete">
+  <div class="champ">
+    <label for="date_limite">Date limite (jj/mm/aaaa)</label>
+    <input type="text" name="date_limite" id="date_limite" value="{{ date_limite }}" required>
+  </div>
+  <div class="champ actions">
+    <button type="submit" name="action" value="calculer" class="bouton bouton-valide">Calculer</button>
+  </div>
+</form>
+
+{% if confirmation %}
+  <form method="post" class="form-suppression"
+        data-confirm="Confirmer la suppression definitive de {{ confirmation.nb }} ligne(s) d'historique anterieures au {{ confirmation.date_norm }} ?">
+    <input type="hidden" name="date_limite" value="{{ confirmation.date_norm }}">
+    <p>
+      <strong>{{ confirmation.nb }}</strong> ligne(s) d'historique seront supprimees
+      definitivement (toutes dates avant le {{ confirmation.date_norm }}, tous types de
+      ramasse confondus).
+    </p>
+    <div class="actions">
+      <a href="{{ url_for('admin.epuration') }}" class="bouton">Annuler</a>
+      <button type="submit" name="action" value="confirmer" class="bouton bouton-quitter">Confirmer la suppression</button>
+    </div>
+  </form>
+{% endif %}
+
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+{% endblock %}

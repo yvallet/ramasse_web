@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Gestion des {{ infos.nom }}{% endblock %}
+{% block content %}
+<h2>Gestion des {{ infos.nom }}</h2>
+<p class="aide">{{ infos.regle }}</p>
+
+<table class="grille-admin">
+  <thead>
+    <tr><th>Code</th><th>Libelle</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for code, libelle in entrees %}
+      <tr>
+        <td>{{ code }}</td>
+        <td>{{ libelle }}</td>
+        <td class="col-actions">
+          <a href="{{ url_for('admin.parametres_liste', slug=slug, editer=code) }}" class="bouton">Modifier</a>
+          <form method="post" action="{{ url_for('admin.parametres_supprimer', slug=slug, code=code) }}"
+                class="form-suppression" data-confirm="Supprimer {{ code }} - {{ libelle }} ?">
+            <button type="submit" class="bouton bouton-quitter">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="3">Aucun enregistrement.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if fiche_edition %}
+  <h3>Modifier {{ fiche_edition.code }}</h3>
+  <form method="post" action="{{ url_for('admin.parametres_modifier', slug=slug, code=fiche_edition.code) }}" class="champs-entete">
+    <div class="champ">
+      <label>Code</label>
+      <input type="text" value="{{ fiche_edition.code }}" disabled>
+    </div>
+    <div class="champ">
+      <label for="libelle_edit">Libelle</label>
+      <input type="text" name="libelle" id="libelle_edit" value="{{ fiche_edition.libelle }}" required>
+    </div>
+    <div class="champ actions">
+      <a href="{{ url_for('admin.parametres_liste', slug=slug) }}" class="bouton">Annuler</a>
+      <button type="submit" class="bouton bouton-valide">Enregistrer</button>
+    </div>
+  </form>
+{% else %}
+  <h3>Ajouter</h3>
+  <form method="post" action="{{ url_for('admin.parametres_ajouter', slug=slug) }}" class="champs-entete">
+    <div class="champ">
+      <label for="code_ajout">Code</label>
+      <input type="text" name="code" id="code_ajout" required>
+    </div>
+    <div class="champ">
+      <label for="libelle_ajout">Libelle</label>
+      <input type="text" name="libelle" id="libelle_ajout" required>
+    </div>
+    <div class="champ actions">
+      <button type="submit" class="bouton bouton-valide">Ajouter</button>
+    </div>
+  </form>
+{% endif %}
+
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+{% endblock %}

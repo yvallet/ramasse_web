@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Gestion des magasins{% endblock %}
+{% block content %}
+<div class="entete-liste">
+  <h2>Gestion des magasins</h2>
+  <a href="{{ url_for('admin.magasin_nouveau') }}" class="bouton bouton-valide">+ Nouveau magasin</a>
+</div>
+
+<table class="grille-admin">
+  <thead>
+    <tr>
+      <th>Type</th>
+      <th>Magasin</th>
+      <th>Nom</th>
+      <th>L</th><th>M</th><th>M</th><th>J</th><th>V</th><th>S</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in magasins %}
+      <tr>
+        <td>{{ m.code_ram }}</td>
+        <td>{{ m.magasin }}</td>
+        <td>{{ m.nom }}</td>
+        <td>{{ "O" if m.lundi else "-" }}</td>
+        <td>{{ "O" if m.mardi else "-" }}</td>
+        <td>{{ "O" if m.mercredi else "-" }}</td>
+        <td>{{ "O" if m.jeudi else "-" }}</td>
+        <td>{{ "O" if m.vendredi else "-" }}</td>
+        <td>{{ "O" if m.samedi else "-" }}</td>
+        <td class="col-actions">
+          <a href="{{ url_for('admin.magasin_modifier', code_ram=m.code_ram, magasin=m.magasin) }}" class="bouton">Modifier</a>
+          <form method="post" action="{{ url_for('admin.magasin_supprimer', code_ram=m.code_ram, magasin=m.magasin) }}"
+                class="form-suppression" data-confirm="Supprimer le magasin {{ m.nom }} ?">
+            <button type="submit" class="bouton bouton-quitter">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="10">Aucun magasin enregistre.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+{% endblock %}

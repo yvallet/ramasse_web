@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ "Nouveau magasin" if mode == "creation" else "Modifier un magasin" }}{% endblock %}
+{% block content %}
+<h2>{{ "Creation d'un magasin" if mode == "creation" else "Modification d'un magasin" }}</h2>
+
+<form method="post" id="form-magasin">
+  <div class="champs-entete">
+    <div class="champ">
+      <label for="code_ram">Type de ramasse</label>
+      <select name="code_ram" id="code_ram" required>
+        <option value="">-- choisir --</option>
+        {% for code, libelle in types %}
+          <option value="{{ code }}" {% if header.code_ram == code %}selected{% endif %}>{{ code }} : {{ libelle }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="champ">
+      <label for="magasin">Code magasin</label>
+      <input type="text" inputmode="numeric" name="magasin" id="magasin" value="{{ header.magasin or '' }}" required>
+    </div>
+
+    <div class="champ">
+      <label for="nom">Nom</label>
+      <input type="text" name="nom" id="nom" value="{{ header.nom or '' }}" required>
+    </div>
+
+    <div class="champ">
+      <label for="partenaire">Partenaire</label>
+      <select name="partenaire" id="partenaire">
+        <option value="" {% if not header.partenaire %}selected{% endif %}>(aucun)</option>
+        <option value="COMERSO" {% if header.partenaire == "COMERSO" %}selected{% endif %}>COMERSO</option>
+        <option value="PHENIX" {% if header.partenaire == "PHENIX" %}selected{% endif %}>PHENIX</option>
+      </select>
+    </div>
+
+    <div class="champ champ-case">
+      <label><input type="checkbox" name="rebut" {% if header.rebut == "O" %}checked{% endif %}> Rebut possible sur ce magasin</label>
+    </div>
+
+    <div class="champ champ-jours">
+      <label>Jours de collecte</label>
+      <div class="jours">
+        {% for jour, libelle in [("lundi","Lun"), ("mardi","Mar"), ("mercredi","Mer"), ("jeudi","Jeu"), ("vendredi","Ven"), ("samedi","Sam")] %}
+          <label class="jour"><input type="checkbox" name="{{ jour }}" {% if header.get(jour) %}checked{% endif %}> {{ libelle }}</label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <h3>Articles collectes</h3>
+  <table class="grille-admin" id="table-lignes">
+    <thead>
+      <tr>
+        <th>Code article (7 car.)</th>
+        <th>Designation</th>
+        <th>Depot</th>
+        <th>Code fournisseur (8 car.)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in lignes %}
+        <tr>
+          <td><input type="text" name="codart" maxlength="7" value="{{ l.codart or '' }}"></td>
+          <td><input type="text" name="libart" value="{{ l.libart or '' }}"></td>
+          <td><input type="text" name="depot" maxlength="3" value="{{ l.depot or '' }}"></td>
+          <td><input type="text" name="codfour" maxlength="8" value="{{ l.codfour or '' }}"></td>
+          <td><button type="button" class="bouton bouton-quitter bouton-retirer-ligne">Retirer</button></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button type="button" class="bouton" id="bouton-ajouter-ligne">+ Ajouter une ligne</button>
+
+  <template id="modele-ligne">
+    <tr>
+      <td><input type="text" name="codart" maxlength="7" value=""></td>
+      <td><input type="text" name="libart" value=""></td>
+      <td><input type="text" name="depot" maxlength="3" value=""></td>
+      <td><input type="text" name="codfour" maxlength="8" value=""></td>
+      <td><button type="button" class="bouton bouton-quitter bouton-retirer-ligne">Retirer</button></td>
+    </tr>
+  </template>
+
+  <div class="actions">
+    <a href="{{ url_for('admin.magasins_liste') }}" class="bouton">Annuler</a>
+    <button type="submit" class="bouton bouton-valide">Enregistrer</button>
+  </div>
+</form>
+
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+{% endblock %}

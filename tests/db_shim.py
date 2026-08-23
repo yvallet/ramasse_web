@@ -41,6 +41,12 @@ class ShimCursor:
     def fetchone(self):
         return self._cur.fetchone()
 
+    @property
+    def rowcount(self):
+        # Utilise par services/epuration.py (nombre de lignes supprimees),
+        # comme cur.rowcount avec mysql.connector dans l'original.
+        return self._cur.rowcount
+
 
 class ShimConnection:
     def __init__(self, real_conn):
@@ -82,6 +88,15 @@ def build_test_db():
 
     # -- type de ramasse --
     raw.execute("insert into param (code_type, code, libelle) values ('T','BA','Ramasse BA')")
+
+    # -- fournisseurs et articles references par les modeles ci-dessous --
+    for code, libelle in [("02580004", "Leclerc Drive"), ("02580038", "Intermarche Sauvigny")]:
+        raw.execute("insert into param (code_type, code, libelle) values ('F', ?, ?)", (code, libelle))
+    for code, libelle in [
+        ("0119000", "Pain - Viennoiserie"), ("4520000", "Fruits-Legumes Non Transformes"),
+        ("4620001", "Viande - Poisson"), ("4320001", "Produits Laitiers"),
+    ]:
+        raw.execute("insert into param (code_type, code, libelle) values ('A', ?, ?)", (code, libelle))
 
     # -- modele magasin 10 : ouvert lundi, 3 lignes, ferme le mardi --
     for nolig, codart, libart in [(1, "0119000", "Pain"), (2, "4520000", "Fruits-Legumes"), (3, "4620001", "Viande")]:

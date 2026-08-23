@@ -1,17 +1,17 @@
 # coding: utf8
 """
-Ramasse journaliere - version web (Flask), MVP portant l'ecran principal
-du programme tkinter d'origine (ramasse10_sql.py) :
+Ramasse journaliere - version web (Flask), portage de ramasse10_sql.py :
   - Page 1 (saisie) : choix du type de ramasse + date de tournee
   - Page 2 (detail) : saisie des quantites/rebuts par magasin, navigation
     Suivant/Precedent, ajout d'un magasin non prevu, validation de fin de
     journee (export CSV VIF) ou sortie sans export.
+  - Administration (voir admin.py) : gestion des magasins, des
+    fournisseurs, des articles et des types de ramasse.
 
-Ecrans NON repris dans ce MVP (deliberement, cf. echange initial) :
-  gestion des magasins et des modeles, epuration de l'historique,
-  sauvegarde, impression d'etiquettes / bon de reception PDF.
-  Ces ecrans reposent sur le meme schema MySQL et pourront etre ajoutes de
-  la meme maniere par la suite.
+Ecrans NON repris (deliberement, hors du perimetre convenu) : epuration
+de l'historique, sauvegarde, impression d'etiquettes / bon de reception
+PDF. Ils reposent sur le meme schema MySQL et pourront etre ajoutes de la
+meme maniere par la suite.
 """
 import logging
 import os
@@ -31,6 +31,10 @@ def create_app():
     app.config.from_object(Config)
     db.init_app(app)
     _configurer_logs(app)
+
+    from admin import admin_bp
+    app.register_blueprint(admin_bp)
+
     return app
 
 

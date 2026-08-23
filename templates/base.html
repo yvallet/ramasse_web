@@ -8,7 +8,15 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Ramasse journaliere</h1>
+    <h1><a href="{{ url_for('saisie') }}">Ramasse journaliere</a></h1>
+    <nav class="nav-admin">
+      <a href="{{ url_for('saisie') }}">Saisie</a>
+      <a href="{{ url_for('admin.magasins_liste') }}">Magasins</a>
+      <a href="{{ url_for('admin.parametres_liste', slug='fournisseurs') }}">Fournisseurs</a>
+      <a href="{{ url_for('admin.parametres_liste', slug='articles') }}">Articles</a>
+      <a href="{{ url_for('admin.parametres_liste', slug='types') }}">Types de ramasse</a>
+      <a href="{{ url_for('admin.epuration') }}">Epuration</a>
+    </nav>
   </header>
 
   <main class="conteneur">
