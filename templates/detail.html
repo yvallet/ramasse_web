@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Ramasse {{ code_ram }} - {{ date_norm }}{% endblock %}
+{% block content %}
+<div class="detail-layout">
+
+  <aside class="liste-magasins">
+    <h2>{{ code_ram }} - {{ date_norm }}</h2>
+    <ul>
+      {% for mag, nom in scheduled %}
+        <li>
+          <a href="{{ url_for('detail', magasin=mag) }}" class="{{ 'actif' if mag == magasin else '' }}">
+            {{ nom }}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+
+    {% if addable %}
+      <form method="post" action="{{ url_for('detail_add_store') }}" class="ajout-magasin">
+        <label for="nouveau_magasin">Ajouter un magasin non prevu</label>
+        <select name="nouveau_magasin" id="nouveau_magasin">
+          {% for mag, nom in addable %}
+            <option value="{{ mag }}">{{ nom }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="bouton">Ajouter</button>
+      </form>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('detail_quitter') }}" id="form-quitter">
+      <button type="submit" class="bouton bouton-quitter">Quitter</button>
+    </form>
+  </aside>
+
+  <section class="grille-magasin">
+    {% if magasin is none %}
+      <p>Aucun magasin selectionne.</p>
+    {% else %}
+      <h2>{{ nom_magasin }}</h2>
+
+      <form method="post" action="{{ url_for('detail_save') }}" id="form-detail">
+        <input type="hidden" name="magasin" value="{{ magasin }}">
+
+        <table class="grille">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Designation</th>
+              <th>Quantite (Kg)</th>
+              <th>Rebut (Kg)</th>
+              <th>Total jour article</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for l in lines %}
+              <tr>
+                <td>{{ l.codart }}</td>
+                <td>{{ l.libart }}</td>
+                <td>
+                  <input type="hidden" name="id" value="{{ l.id }}">
+                  <input type="hidden" name="nolig" value="{{ l.nolig }}">
+                  <input type="hidden" name="codart" value="{{ l.codart }}">
+                  <input type="hidden" name="libart" value="{{ l.libart }}">
+                  <input type="text" inputmode="decimal" name="qte" class="qte" value="{{ l.qte }}"
+                         data-rebut-cible="rebut-{{ loop.index }}" data-codart="{{ l.codart }}">
+                </td>
+                <td>
+                  <input type="text" inputmode="decimal" name="rebut" id="rebut-{{ loop.index }}"
+                         class="rebut" value="{{ l.rebut }}" data-codart="{{ l.codart }}">
+                </td>
+                <td class="total" id="total-{{ loop.index }}" data-codart="{{ l.codart }}">{{ totals.get(l.codart, 0) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <script id="totaux-hors-magasin" type="application/json">{{ totaux_hors_magasin | tojson }}</script>
+
+        <div class="actions">
+          <button type="submit" name="action" value="precedent"
+                  formaction="{{ url_for('detail_save') }}" {{ 'disabled' if not has_prev }}>&laquo; Precedent</button>
+
+          <button type="submit" name="action" value="save"
+                  formaction="{{ url_for('detail_save') }}">Enregistrer</button>
+
+          <button type="submit" name="action" value="suivant"
+                  formaction="{{ url_for('detail_save') }}" {{ 'disabled' if not has_next }}>Suivant &raquo;</button>
+
+          <button type="submit" name="action" value="save_current"
+                  formaction="{{ url_for('detail_terminer') }}" class="bouton-valide">Terminer la journee</button>
+        </div>
+      </form>
+    {% endif %}
+  </section>
+</div>
+
+<script src="{{ url_for('static', filename='detail.js') }}"></script>
+{% endblock %}

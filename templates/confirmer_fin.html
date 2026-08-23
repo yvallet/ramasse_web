@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Confirmer la fin de journee{% endblock %}
+{% block content %}
+<h2>Confirmer la fin de journee - {{ code_ram }} - {{ date_norm }}</h2>
+
+<p>Attention, aucun poids n'a ete saisi pour :</p>
+<ul>
+  {% for nom in vides %}
+    <li>{{ nom }}</li>
+  {% endfor %}
+</ul>
+<p>Vous confirmez la fin de journee malgre ces magasins vides ?</p>
+
+<form method="post" action="{{ url_for('detail_terminer') }}">
+  <input type="hidden" name="confirmed" value="1">
+  <div class="actions">
+    <a href="{{ url_for('detail') }}" class="bouton bouton-quitter">Annuler, revenir a la saisie</a>
+    <button type="submit" class="bouton bouton-valide">Confirmer et exporter</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,15 @@
+# Environnement Python local (a recreer avec pip install -r requirements.txt)
+venv/
+__pycache__/
+*.pyc
+
+# Secrets : mot de passe MySQL, cle secrete Flask -> ne JAMAIS pousser sur GitHub
+.env
+
+# Fichiers generes a l'execution
+logs/
+export_csv/
+
+# Divers
+.DS_Store
+Thumbs.db

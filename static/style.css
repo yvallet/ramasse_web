@@ -1,0 +1,92 @@
+:root {
+  --bleu: #00cccc;
+  --orange: #fe9241;
+  --vert: #4caf50;
+  --rouge: #e53935;
+  --bord: #ccc;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  background: #f4f4f4;
+  color: #222;
+}
+
+.topbar {
+  background: var(--bleu);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+}
+.topbar h1 { margin: 0; font-size: 1.3rem; }
+
+.conteneur { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+
+.messages { margin-bottom: 1rem; }
+.msg { padding: 0.6rem 1rem; border-radius: 4px; margin-bottom: 0.5rem; }
+.msg-error { background: #fdecea; color: var(--rouge); border: 1px solid var(--rouge); }
+.msg-warning { background: #fff8e1; color: #8a6d00; border: 1px solid #e0c26a; }
+.msg-ok { background: #eaf7ea; color: #2e7d32; border: 1px solid var(--vert); }
+
+.champ { margin-bottom: 1rem; }
+.champ label { display: block; font-weight: bold; margin-bottom: 0.25rem; }
+.champ select, .champ input[type=text] {
+  padding: 0.4rem; font-size: 1rem; min-width: 260px;
+}
+
+.actions { margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+
+.bouton {
+  padding: 0.5rem 1.1rem;
+  border: none;
+  border-radius: 4px;
+  background: #ddd;
+  cursor: pointer;
+  font-size: 0.95rem;
+  text-decoration: none;
+  color: #222;
+  display: inline-block;
+}
+.bouton-valide, button.bouton-valide, button[value=save_current] { background: var(--vert); color: #fff; }
+.bouton-quitter, button[name=action][value=quitter] { background: #f28b82; color: #fff; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.detail-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+
+.liste-magasins {
+  flex: 0 0 240px;
+  background: #fff;
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  padding: 1rem;
+}
+.liste-magasins h2 { font-size: 1rem; margin-top: 0; }
+.liste-magasins ul { list-style: none; padding: 0; margin: 0 0 1rem; }
+.liste-magasins li { margin-bottom: 0.35rem; }
+.liste-magasins a {
+  display: block;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  text-decoration: none;
+  color: #222;
+  background: #f0f0f0;
+}
+.liste-magasins a.actif { background: var(--bleu); color: #fff; font-weight: bold; }
+.ajout-magasin { margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.4rem; }
+
+.grille-magasin {
+  flex: 1;
+  background: #fff;
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+}
+
+table.grille { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+table.grille th, table.grille td { border: 1px solid var(--bord); padding: 0.4rem 0.5rem; text-align: left; }
+table.grille th { background: var(--bleu); color: #fff; }
+table.grille input[type=text] { width: 6.5rem; padding: 0.3rem; text-align: right; }
+table.grille td.total { text-align: right; font-weight: bold; background: #fafafa; }
+input.qte.alerte, input.rebut.alerte { border-color: var(--rouge); background: #fdecea; }

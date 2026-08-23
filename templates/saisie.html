@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Ramasse journaliere - Saisie{% endblock %}
+{% block content %}
+<form method="get" action="{{ url_for('saisie') }}" id="form-type">
+  <div class="champ">
+    <label for="type">Type de ramasse</label>
+    <select name="type" id="type" onchange="document.getElementById('form-type').submit()">
+      <option value="">-- choisir --</option>
+      {% for code, libelle in types %}
+        <option value="{{ code }}" {% if code == code_ram %}selected{% endif %}>{{ code }} : {{ libelle }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+<form method="post" action="{{ url_for('saisie_valider') }}" id="form-valider">
+  <input type="hidden" name="type" value="{{ code_ram }}">
+
+  <div class="champ">
+    <label for="date">Date de reception (jj/mm/aaaa)</label>
+    <input type="text" name="date" id="date" value="{{ date_defaut }}" placeholder="jj/mm/aaaa" required>
+  </div>
+
+  <div class="champ">
+    <label>Tournee du</label>
+    <output id="jour">{{ nom_jour }}</output>
+  </div>
+
+  <div class="actions">
+    <button type="submit" class="bouton bouton-valide" {% if not code_ram %}disabled{% endif %}>Valider</button>
+  </div>
+</form>
+
+<script src="{{ url_for('static', filename='saisie.js') }}"></script>
+{% endblock %}
