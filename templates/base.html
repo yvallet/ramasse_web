@@ -9,15 +9,26 @@
 <body>
   <header class="topbar">
     <h1><a href="{{ url_for('saisie') }}">Ramasse journaliere</a></h1>
-    <nav class="nav-admin">
-      <a href="{{ url_for('saisie') }}">Saisie</a>
-      <a href="{{ url_for('admin.magasins_liste') }}">Magasins</a>
-      <a href="{{ url_for('admin.parametres_liste', slug='fournisseurs') }}">Fournisseurs</a>
-      <a href="{{ url_for('admin.parametres_liste', slug='articles') }}">Articles</a>
-      <a href="{{ url_for('admin.parametres_liste', slug='types') }}">Types de ramasse</a>
-      <a href="{{ url_for('admin.epuration') }}">Epuration</a>
-      <a href="{{ url_for('admin.sauvegarde') }}">Sauvegarde</a>
-    </nav>
+    {% if current_user %}
+      <nav class="nav-admin">
+        <a href="{{ url_for('saisie') }}">Saisie</a>
+        <a href="{{ url_for('admin.magasins_liste') }}">Magasins</a>
+        <a href="{{ url_for('admin.parametres_liste', slug='fournisseurs') }}">Fournisseurs</a>
+        <a href="{{ url_for('admin.parametres_liste', slug='articles') }}">Articles</a>
+        <a href="{{ url_for('admin.parametres_liste', slug='types') }}">Types de ramasse</a>
+        <a href="{{ url_for('admin.epuration') }}">Epuration</a>
+        {% if est_admin %}
+          <a href="{{ url_for('admin.sauvegarde') }}">Sauvegarde</a>
+          <a href="{{ url_for('admin.utilisateurs_liste') }}">Utilisateurs</a>
+        {% endif %}
+      </nav>
+      <div class="compte-utilisateur">
+        <span>{{ current_user.nom_ba }} ({{ current_user.login }})</span>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          <button type="submit" class="bouton bouton-mini">Se deconnecter</button>
+        </form>
+      </div>
+    {% endif %}
   </header>
 
   <main class="conteneur">

@@ -6,12 +6,20 @@ Ecrans d'administration portes depuis ramasse10_sql.py :
     un seul ecran generique reutilise 3 fois -> fenetre_fournisseurs()/
     fenetre_articles()/fenetre_types()/charger_clients()/ajout_cli()/
     sup_cli())
+  - Epuration de l'historique (fenetre10 -> epuration()/valider_epur())
+  - Sauvegarde SQL complete de la base (fonctionnalite absente de
+    l'original, voir services/sauvegarde.py) - reservee a l'administrateur
+  - Gestion des utilisateurs (fonctionnalite absente de l'original, voir
+    services/utilisateurs.py) - reservee a l'administrateur (CODE_BA='00')
 
 Regroupes dans un Blueprint separe de app.py (qui reste centre sur
 l'ecran de saisie journaliere) pour garder chaque fichier lisible.
-  - Epuration de l'historique (fenetre10 -> epuration()/valider_epur())
-  - Sauvegarde SQL complete de la base (fonctionnalite absente de
-    l'original, voir services/sauvegarde.py)
+
+Cloisonnement multi-site (CODE_BA) : la gestion des magasins et
+l'epuration de l'historique sont desormais limitees au site (code_ba) de
+l'utilisateur connecte (voir auth.utilisateur_courant()) - jamais une
+valeur choisie par le navigateur. Les fournisseurs/articles/types restent
+un referentiel partage entre tous les sites (pas de CODE_BA sur `param`).
 """
 import os
 
@@ -21,11 +29,13 @@ from flask import (
 )
 
 import db
+from auth import admin_required, utilisateur_courant
 from services import magasins as sm
 from services import parametres as sp
 from services import epuration as se
 from services import dateutils as du
 from services import sauvegarde as ss
+from services import utilisateurs as su
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -39,14 +49,19 @@ def _code_type_ou_404(slug):
     return SLUGS[slug]
 
 
+def _code_ba_courant():
+    """CODE_BA de l'utilisateur connecte (garanti present : voir auth.py, protection globale des routes)."""
+    return utilisateur_courant()["code_ba"]
+
+
 # --------------------------------------------------------------------- #
-# Gestion des magasins (table `modeles`)
+# Gestion des magasins (table `modeles`) - limitee au site de l'utilisateur
 # --------------------------------------------------------------------- #
 
 @admin_bp.route("/magasins")
 def magasins_liste():
     conn = db.get_db()
-    magasins = sm.liste_magasins(conn)
+    magasins = sm.liste_magasins(conn, _code_ba_courant())
     return render_template("admin_magasins.html", magasins=magasins)
 
 
@@ -85,11 +100,12 @@ def _lire_formulaire_magasin():
 @admin_bp.route("/magasins/nouveau", methods=["GET", "POST"])
 def magasin_nouveau():
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     types = sm_list_types_safe(conn)
 
     if request.method == "POST":
         header, lignes = _lire_formulaire_magasin()
-        erreurs = sm.valider_magasin(conn, header, lignes)
+        erreurs = sm.valider_magasin(conn, code_ba, header, lignes)
         if erreurs:
             for e in erreurs:
                 flash(e, "error")
@@ -97,8 +113,8 @@ def magasin_nouveau():
                 "admin_magasin_form.html", mode="creation", types=types,
                 header=header, lignes=lignes or [{}],
             )
-        sm.enregistrer_magasin(conn, header, lignes)
-        current_app.logger.info("Magasin cree : %s %s (%s)", header["code_ram"], header["magasin"], header["nom"])
+        sm.enregistrer_magasin(conn, code_ba, header, lignes)
+        current_app.logger.info("Magasin cree : %s %s %s (%s)", code_ba, header["code_ram"], header["magasin"], header["nom"])
         flash("Magasin cree.", "ok")
         return redirect(url_for("admin.magasins_liste"))
 
@@ -111,12 +127,13 @@ def magasin_nouveau():
 @admin_bp.route("/magasins/<code_ram>/<magasin>/modifier", methods=["GET", "POST"])
 def magasin_modifier(code_ram, magasin):
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     types = sm_list_types_safe(conn)
 
     if request.method == "POST":
         header, lignes = _lire_formulaire_magasin()
         erreurs = sm.valider_magasin(
-            conn, header, lignes,
+            conn, code_ba, header, lignes,
             code_ram_existant=code_ram, magasin_existant=magasin,
         )
         if erreurs:
@@ -130,13 +147,15 @@ def magasin_modifier(code_ram, magasin):
         # Si le type ou le code magasin a change, on supprime l'ancien
         # couple pour eviter de laisser un doublon orphelin.
         if (header["code_ram"], str(header["magasin"])) != (code_ram, str(magasin)):
-            sm.supprimer_magasin(conn, code_ram, magasin)
-        sm.enregistrer_magasin(conn, header, lignes)
-        current_app.logger.info("Magasin modifie : %s %s -> %s %s", code_ram, magasin, header["code_ram"], header["magasin"])
+            sm.supprimer_magasin(conn, code_ba, code_ram, magasin)
+        sm.enregistrer_magasin(conn, code_ba, header, lignes)
+        current_app.logger.info(
+            "Magasin modifie : %s %s %s -> %s %s", code_ba, code_ram, magasin, header["code_ram"], header["magasin"]
+        )
         flash("Magasin modifie.", "ok")
         return redirect(url_for("admin.magasins_liste"))
 
-    fiche = sm.get_magasin(conn, code_ram, magasin)
+    fiche = sm.get_magasin(conn, code_ba, code_ram, magasin)
     if fiche is None:
         flash("Ce magasin n'existe pas (ou plus).", "error")
         return redirect(url_for("admin.magasins_liste"))
@@ -151,8 +170,9 @@ def magasin_modifier(code_ram, magasin):
 @admin_bp.route("/magasins/<code_ram>/<magasin>/supprimer", methods=["POST"])
 def magasin_supprimer(code_ram, magasin):
     conn = db.get_db()
-    sm.supprimer_magasin(conn, code_ram, magasin)
-    current_app.logger.info("Magasin supprime : %s %s", code_ram, magasin)
+    code_ba = _code_ba_courant()
+    sm.supprimer_magasin(conn, code_ba, code_ram, magasin)
+    current_app.logger.info("Magasin supprime : %s %s %s", code_ba, code_ram, magasin)
     flash("Magasin supprime.", "ok")
     return redirect(url_for("admin.magasins_liste"))
 
@@ -167,6 +187,7 @@ def sm_list_types_safe(conn):
 
 # --------------------------------------------------------------------- #
 # Gestion des fournisseurs / articles / types de ramasse (table `param`)
+# Referentiel PARTAGE entre tous les sites (pas de CODE_BA sur `param`).
 # --------------------------------------------------------------------- #
 
 @admin_bp.route("/parametres/<slug>")
@@ -227,12 +248,13 @@ def parametres_supprimer(slug, code):
 
 
 # --------------------------------------------------------------------- #
-# Epuration de l'historique (table `histo`)
+# Epuration de l'historique (table `histo`) - limitee au site de l'utilisateur
 # --------------------------------------------------------------------- #
 
 @admin_bp.route("/epuration", methods=["GET", "POST"])
 def epuration():
     conn = db.get_db()
+    code_ba = _code_ba_courant()
 
     if request.method == "GET":
         return render_template(
@@ -252,16 +274,16 @@ def epuration():
     date_amj = du.amj(date_norm)
 
     if action == "confirmer":
-        nb = se.epurer(conn, date_amj)
+        nb = se.epurer(conn, code_ba, date_amj)
         current_app.logger.warning(
-            "Epuration de l'historique a la date du %s : %s ligne(s) supprimee(s)", date_amj, nb
+            "Epuration de l'historique (site %s) a la date du %s : %s ligne(s) supprimee(s)", code_ba, date_amj, nb
         )
         flash("Epuration terminee, nombre supprime : %s" % nb, "ok")
         return redirect(url_for("admin.epuration"))
 
     # action == "calculer" (premier passage) : on annonce le nombre de
     # lignes concernees, sans encore rien supprimer.
-    nb = se.compter(conn, date_amj)
+    nb = se.compter(conn, code_ba, date_amj)
     if nb == 0:
         flash("Aucune ligne d'historique avant le %s." % date_norm, "warning")
         return render_template("admin_epuration.html", date_limite=date_norm, confirmation=None)
@@ -274,10 +296,12 @@ def epuration():
 
 
 # --------------------------------------------------------------------- #
-# Sauvegarde SQL complete de la base (mysqldump)
+# Sauvegarde SQL complete de la base (mysqldump) - reservee a l'administrateur
+# (le dump contient les donnees de TOUS les sites, pas seulement le sien).
 # --------------------------------------------------------------------- #
 
 @admin_bp.route("/sauvegarde", methods=["GET", "POST"])
+@admin_required
 def sauvegarde():
     repertoire = current_app.config["CSV_EXPORT_DIR"]
 
@@ -297,6 +321,7 @@ def sauvegarde():
 
 
 @admin_bp.route("/sauvegarde/<nom>/telecharger")
+@admin_required
 def sauvegarde_telecharger(nom):
     nom = os.path.basename(nom)
     if not (nom.startswith(ss.PREFIXE) and nom.endswith(ss.SUFFIXE)):
@@ -307,3 +332,81 @@ def sauvegarde_telecharger(nom):
         abort(404)
 
     return send_from_directory(repertoire, nom, as_attachment=True)
+
+
+# --------------------------------------------------------------------- #
+# Gestion des utilisateurs (table `user`) - reservee a l'administrateur
+# (CODE_BA = '00'), fonctionnalite absente de l'original.
+# --------------------------------------------------------------------- #
+
+@admin_bp.route("/utilisateurs")
+@admin_required
+def utilisateurs_liste():
+    conn = db.get_db()
+    return render_template("admin_utilisateurs.html", utilisateurs=su.lister(conn))
+
+
+@admin_bp.route("/utilisateurs/nouveau", methods=["GET", "POST"])
+@admin_required
+def utilisateur_nouveau():
+    if request.method == "POST":
+        conn = db.get_db()
+        login = request.form.get("login")
+        code_ba = request.form.get("code_ba")
+        nom_ba = request.form.get("nom_ba")
+        try:
+            su.creer(conn, login, request.form.get("mot_de_passe"), code_ba, nom_ba)
+            current_app.logger.info("Utilisateur cree : %s (CODE_BA %s)", login, code_ba)
+            flash("Utilisateur cree.", "ok")
+            return redirect(url_for("admin.utilisateurs_liste"))
+        except ValueError as e:
+            flash(str(e), "error")
+            return render_template(
+                "admin_utilisateur_form.html", mode="creation",
+                utilisateur={"login": login, "code_ba": code_ba, "nom_ba": nom_ba},
+            )
+
+    return render_template("admin_utilisateur_form.html", mode="creation", utilisateur={})
+
+
+@admin_bp.route("/utilisateurs/<login>/modifier", methods=["GET", "POST"])
+@admin_required
+def utilisateur_modifier(login):
+    conn = db.get_db()
+
+    if request.method == "POST":
+        code_ba = request.form.get("code_ba")
+        nom_ba = request.form.get("nom_ba")
+        try:
+            su.modifier(conn, login, code_ba, nom_ba)
+            nouveau_mdp = request.form.get("nouveau_mot_de_passe") or ""
+            if nouveau_mdp:
+                su.changer_mot_de_passe(conn, login, nouveau_mdp)
+            current_app.logger.info("Utilisateur modifie : %s", login)
+            flash("Utilisateur modifie.", "ok")
+            return redirect(url_for("admin.utilisateurs_liste"))
+        except ValueError as e:
+            flash(str(e), "error")
+            return render_template(
+                "admin_utilisateur_form.html", mode="modification",
+                utilisateur={"login": login, "code_ba": code_ba, "nom_ba": nom_ba},
+            )
+
+    utilisateur = su.trouver_par_login(conn, login)
+    if utilisateur is None:
+        flash("Ce compte n'existe pas (ou plus).", "error")
+        return redirect(url_for("admin.utilisateurs_liste"))
+    return render_template("admin_utilisateur_form.html", mode="modification", utilisateur=utilisateur)
+
+
+@admin_bp.route("/utilisateurs/<login>/supprimer", methods=["POST"])
+@admin_required
+def utilisateur_supprimer(login):
+    conn = db.get_db()
+    try:
+        su.supprimer(conn, login)
+        current_app.logger.info("Utilisateur supprime : %s", login)
+        flash("Utilisateur supprime.", "ok")
+    except ValueError as e:
+        flash(str(e), "error")
+    return redirect(url_for("admin.utilisateurs_liste"))

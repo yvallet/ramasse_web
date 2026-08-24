@@ -60,6 +60,51 @@ tourner l'application (fourni avec MySQL Server / MySQL Workbench sous
 Windows) et accessible dans le PATH, ou son chemin complet renseigne dans
 `.env` via `MYSQLDUMP_PATH` (voir `.env.example`).
 
+**Lot 5 - authentification et multi-site** (`auth.py`, `services/
+utilisateurs.py`) : **fonctionnalite absente de l'original** -
+`ramasse10_sql.py` etait un programme desktop mono-poste, sans notion de
+compte utilisateur. Pour permettre d'heberger l'application sur un serveur
+partage entre plusieurs sites ("BA"), toute l'application exige desormais
+d'etre connecte :
+
+- Une table `user` (login = adresse mail, mot de passe hashe, CODE_BA,
+  nom_BA) associe chaque compte a un site. **Le CODE_BA du compte connecte
+  remplace desormais le CODE_BA jusque-la fixe dans `.env`** : il n'existe
+  plus de reglage global au serveur, chaque connexion determine les
+  magasins et l'historique visibles.
+- Convention : **CODE_BA = '00' identifie l'administrateur**, seul autorise
+  a acceder au menu "Utilisateurs" (creation/modification/suppression des
+  comptes) ainsi qu'a l'ecran "Sauvegarde" (le dump SQL contient les
+  donnees de TOUS les sites). Un administrateur n'a pas de donnees de
+  ramasse propres.
+- Un premier compte administrateur est cree automatiquement au demarrage
+  (`yvmaison@free.fr` / `admin` / CODE_BA `00`) s'il n'existe pas encore -
+  **a changer immediatement** apres la premiere connexion (menu
+  Utilisateurs). Les comptes des sites sont ensuite crees par
+  l'administrateur depuis cet ecran.
+- "Mot de passe oublie" : **version simplifiee, choisie deliberement**, qui
+  ne necessite pas de serveur d'envoi d'email a configurer. L'utilisateur
+  saisit son login puis definit directement un nouveau mot de passe, sans
+  lien de verification envoye par email. C'est moins sur qu'un vrai flux
+  par email (n'importe qui connaissant l'adresse d'un utilisateur peut
+  reinitialiser son mot de passe) - a garder en tete si l'application
+  devient accessible publiquement ; un vrai envoi d'email pourra etre
+  ajoute plus tard sans tout reecrire (seule la route `/mot-de-passe-oublie`
+  serait a changer).
+- Cloisonnement des donnees : les tables `histo` et `modeles` portent
+  desormais une colonne `code_ba`, et toute lecture/ecriture y est
+  systematiquement filtree par le CODE_BA de l'utilisateur connecte -
+  jamais une valeur choisie par le navigateur (voir `services/ramasse.py`,
+  `services/magasins.py`, `services/epuration.py`). La gestion des
+  fournisseurs/articles/types (table `param`) reste en revanche un
+  referentiel **partage** entre tous les sites, comme dans l'original.
+- **Migration de base necessaire** : executez `migration_login_multi_ba.sql`
+  sur votre base MySQL existante (une seule fois) avant de deployer cette
+  version - il cree la table `user` et ajoute la colonne `code_ba` aux
+  tables `histo`/`modeles`. Les lignes deja presentes dans ces 2 tables
+  sont automatiquement rattachees a CODE_BA = '58' (nom_BA = 'BA 58') par
+  le script, pour ne rien perdre de l'historique existant.
+
 ## Ce qui n'est PAS encore dans cette version (a faire dans un 2e temps, si besoin)
 
 Impression d'etiquettes et de bon de reception PDF (fonctions de
@@ -81,6 +126,20 @@ copy .env.example .env            # Windows ; sous Linux/Mac : cp .env.example .
 Le schema MySQL est le meme que celui de l'appli desktop : si la base
 `yvallet_base` existe deja (celle utilisee par ramasse10_sql.py), rien a
 importer. Sinon, importer `Create_yvallet_base_WithData.sql` comme avant.
+
+Puis, dans tous les cas (base neuve ou existante), executer
+`migration_login_multi_ba.sql` **une seule fois** pour ajouter
+l'authentification multi-site (table `user`, colonne `code_ba` sur
+`histo`/`modeles` - voir le Lot 5 plus haut) :
+
+```bash
+mysql -u root -p yvallet_base < migration_login_multi_ba.sql
+```
+
+Au premier demarrage de l'application apres cette migration, un compte
+administrateur par defaut est cree automatiquement (`yvmaison@free.fr` /
+`admin` / CODE_BA `00`) - connectez-vous et changez son mot de passe tout
+de suite (menu Utilisateurs), puis creez un compte par site.
 
 ## Log des erreurs d'execution
 
@@ -127,11 +186,15 @@ type+magasin...), creation/modification/suppression d'un magasin,
 ajout/modification/suppression de fournisseurs/articles/types,
 epuration de l'historique (calcul du nombre de lignes concernees,
 confirmation, suppression effective, absence de filtre par type de
-ramasse), et sauvegarde SQL (nom de fichier genere, liste des sauvegardes,
+ramasse), sauvegarde SQL (nom de fichier genere, liste des sauvegardes,
 gestion des echecs mysqldump, mot de passe jamais expose sur la ligne de
-commande, telechargement). Comme cet environnement de developpement n'a
-acces ni a un vrai serveur MySQL ni a `mysqldump`, les tests utilisent une
-base sqlite3 en memoire qui rejoue exactement les memes requetes SQL
+commande, telechargement), et authentification multi-site (creation/
+modification/suppression de compte, connexion/deconnexion, "mot de passe
+oublie", reservation du menu Utilisateurs et de la Sauvegarde a
+l'administrateur, cloisonnement des donnees d'un site a l'autre pour les
+magasins/l'historique). Comme cet environnement de developpement n'a acces
+ni a un vrai serveur MySQL ni a `mysqldump`, les tests utilisent une base
+sqlite3 en memoire qui rejoue exactement les memes requetes SQL
 (`tests/db_shim.py`), et un `mysqldump` simule pour la sauvegarde :
 
 ```bash
@@ -139,20 +202,31 @@ python3 tests/test_workflow.py
 python3 tests/test_admin.py
 ```
 
-Les 63 tests (14 + 49) passent. Avant la mise en production, faites tout
-de meme un essai manuel complet avec votre vraie base MySQL locale et un
-vrai `mysqldump` (le connecteur MySQL n'a pas pu etre installe dans cet
+Les 89 tests (16 + 73) passent. Avant la mise en production, faites tout de
+meme un essai manuel complet avec votre vraie base MySQL locale et un vrai
+`mysqldump` (le connecteur MySQL n'a pas pu etre installe dans cet
 environnement de developpement, faute d'acces reseau — a verifier avec
 `pip install -r requirements.txt` chez vous).
 
 ## Differences volontaires par rapport a l'original
 
-- **Multi-utilisateurs** : l'original gardait tout en variables globales
-  Python (une seule connexion, un seul "magasin courant" pour tout le
-  monde). La version web garde le type de ramasse / la date / le magasin
-  courant dans la session du navigateur de chaque utilisateur : plusieurs
-  postes peuvent saisir des magasins differents en meme temps sans se
-  marcher dessus.
+- **Multi-utilisateurs et multi-site** : l'original gardait tout en
+  variables globales Python (une seule connexion, un seul "magasin
+  courant", un seul CODE_BA pour tout le monde). La version web garde le
+  type de ramasse / la date / le magasin courant dans la session de chaque
+  utilisateur connecte, et chaque compte est desormais rattache a un
+  CODE_BA (voir le Lot 5 plus haut) : plusieurs sites peuvent partager le
+  meme serveur sans jamais voir les magasins ou l'historique les uns des
+  autres, et plusieurs postes d'un meme site peuvent saisir des magasins
+  differents en meme temps sans se marcher dessus.
+- **Protection contre la modification d'une ligne d'un autre site** :
+  fonctionnalite absente de l'original (qui n'avait pas cette notion).
+  L'enregistrement d'une ligne de saisie (`save_lines`) verifie desormais
+  que son identifiant appartient bien au CODE_BA de l'utilisateur connecte
+  avant de la mettre a jour - sans ce controle, un identifiant de ligne
+  modifie dans le formulaire aurait pu, en theorie, mettre a jour la ligne
+  d'un AUTRE site (les identifiants sont de simples entiers auto-
+  incrementes, partages entre tous les sites).
 - **Requetes SQL parametrees** : l'original construisait ses requetes par
   concaténation de chaines (`"... where code_ram = " + quot + wc + quot`).
   Le portage utilise des parametres (`%s`) partout : meme resultat, sans le

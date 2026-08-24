@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Connexion{% endblock %}
+{% block content %}
+<div class="page-connexion">
+  <h2>Connexion</h2>
+  <form method="post" class="champs-entete">
+    <div class="champ">
+      <label for="login">Login (adresse email)</label>
+      <input type="email" name="login" id="login" value="{{ login }}" required autofocus>
+    </div>
+    <div class="champ">
+      <label for="mot_de_passe">Mot de passe</label>
+      <input type="password" name="mot_de_passe" id="mot_de_passe" required>
+    </div>
+    <div class="champ actions">
+      <button type="submit" class="bouton bouton-valide">Se connecter</button>
+    </div>
+  </form>
+  <p class="aide">
+    <a href="{{ url_for('auth.mot_de_passe_oublie') }}">Mot de passe oublie ?</a>
+  </p>
+</div>
+{% endblock %}

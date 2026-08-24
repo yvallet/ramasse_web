@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Gestion des utilisateurs{% endblock %}
+{% block content %}
+<div class="entete-liste">
+  <h2>Gestion des utilisateurs</h2>
+  <a href="{{ url_for('admin.utilisateur_nouveau') }}" class="bouton bouton-valide">+ Nouvel utilisateur</a>
+</div>
+<p class="aide">
+  Reserve au CODE_BA '00' (Administrateur). Le CODE_BA d'un compte
+  determine desormais les magasins et l'historique visibles pour cet
+  utilisateur - il remplace le CODE_BA jusque-la fixe dans le fichier
+  .env.
+</p>
+
+<table class="grille-admin">
+  <thead>
+    <tr><th>Login</th><th>CODE_BA</th><th>Nom du BA</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for u in utilisateurs %}
+      <tr>
+        <td>{{ u.login }}</td>
+        <td>{{ u.code_ba }}</td>
+        <td>{{ u.nom_ba }}</td>
+        <td class="col-actions">
+          <a href="{{ url_for('admin.utilisateur_modifier', login=u.login) }}" class="bouton">Modifier</a>
+          <form method="post" action="{{ url_for('admin.utilisateur_supprimer', login=u.login) }}"
+                class="form-suppression" data-confirm="Supprimer le compte {{ u.login }} ?">
+            <button type="submit" class="bouton bouton-quitter">Supprimer</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4">Aucun utilisateur.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+{% endblock %}

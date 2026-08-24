@@ -11,12 +11,17 @@ les types de ramasse a la fois - c'est le comportement exact de la requete
 de depart (`delete from histo where date_ram < ...`, sans condition sur
 code_ram).
 
-Difference volontaire par rapport a l'original : l'original supprimait
-directement au clic sur "Valider", sans annoncer au prealable combien de
-lignes seraient touchees. Le portage affiche d'abord ce nombre (compter())
-et demande une confirmation explicite avant d'executer epurer() - une
-purge est irreversible et touche potentiellement tous les magasins/types
-de ramasse a la fois, une confirmation minimale semblait justifiee.
+Differences volontaires par rapport a l'original :
+- L'ecran affiche d'abord le nombre de lignes concernees (compter()) et
+  demande une confirmation explicite avant d'executer epurer() - une
+  purge est irreversible, une confirmation minimale semblait justifiee.
+- Cloisonnement multi-site (CODE_BA) : fonctionnalite absente de
+  l'original. La purge reste desormais TOUJOURS limitee au site
+  (code_ba) de l'utilisateur connecte (voir auth.py) - un utilisateur ne
+  peut epurer que l'historique de son propre site, jamais celui d'un
+  autre. Il n'y a pas de mode "tous les sites a la fois", y compris pour
+  l'administrateur (CODE_BA='00'), qui n'a de toute facon pas de donnees
+  de ramasse propres.
 """
 from datetime import date, timedelta
 
@@ -27,21 +32,21 @@ def date_limite_defaut(jours=30):
     return w.strftime("%d/%m/%Y")
 
 
-def compter(conn, date_limite_amj):
-    """Nombre de lignes de `histo` strictement anterieures a la date limite (format aaaa-mm-jj)."""
+def compter(conn, code_ba, date_limite_amj):
+    """Nombre de lignes de `histo` du site `code_ba`, strictement anterieures a la date limite (format aaaa-mm-jj)."""
     cur = conn.cursor()
-    cur.execute("select count(*) from histo where date_ram < %s", (date_limite_amj,))
+    cur.execute("select count(*) from histo where code_ba = %s and date_ram < %s", (code_ba, date_limite_amj))
     return cur.fetchone()[0] or 0
 
 
-def epurer(conn, date_limite_amj):
+def epurer(conn, code_ba, date_limite_amj):
     """
     Equivalent de valider_epur() : supprime definitivement toutes les
-    lignes de `histo` anterieures a la date limite (format aaaa-mm-jj).
-    Renvoie le nombre de lignes supprimees.
+    lignes de `histo` du site `code_ba` anterieures a la date limite
+    (format aaaa-mm-jj). Renvoie le nombre de lignes supprimees.
     """
     cur = conn.cursor()
-    cur.execute("delete from histo where date_ram < %s", (date_limite_amj,))
+    cur.execute("delete from histo where code_ba = %s and date_ram < %s", (code_ba, date_limite_amj))
     nb = cur.rowcount
     conn.commit()
     return nb

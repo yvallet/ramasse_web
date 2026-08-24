@@ -5,12 +5,23 @@ Logique metier de la "ramasse journaliere", portee depuis ramasse10_sql.py
 page2/suivant/precedent/afficher_suivant/cumul/maj/quit_page2/
 valider_page2/controle/exporter).
 
-Difference volontaire par rapport a l'original : toutes les requetes SQL
-utilisent des parametres (%s) au lieu d'une concatenation de chaines. Le
-programme tkinter construisait ses requetes avec des f-strings / "+"
-(ex: "... where code_ram = " + quot + wc + quot), ce qui fonctionne mais
-expose a des injections SQL si un code contient un caractere imprevu.
-Le comportement observable est identique.
+Differences volontaires par rapport a l'original :
+- Toutes les requetes SQL utilisent des parametres (%s) au lieu d'une
+  concatenation de chaines. Le programme tkinter construisait ses
+  requetes avec des f-strings / "+" (ex: "... where code_ram = " + quot +
+  wc + quot), ce qui fonctionne mais expose a des injections SQL si un
+  code contient un caractere imprevu. Le comportement observable est
+  identique.
+- Cloisonnement multi-site (CODE_BA) : fonctionnalite absente de
+  l'original (une seule installation = un seul site). Chaque fonction qui
+  touche `histo` ou `modeles` prend desormais `code_ba` en premier
+  parametre (juste apres `conn`), correspondant au CODE_BA de
+  l'utilisateur connecte (voir auth.py) - jamais une valeur choisie par
+  le navigateur, pour eviter qu'un utilisateur d'un site ne puisse lire
+  ou modifier les donnees d'un autre site en changeant une valeur dans le
+  formulaire (voir en particulier save_lines, qui filtre desormais aussi
+  par code_ba : sans ca, un identifiant de ligne devine/modifie dans le
+  formulaire aurait pu mettre a jour la ligne d'un autre site).
 """
 import csv
 import os
@@ -35,7 +46,11 @@ class ControleError(Exception):
 # ----------------------------- Types de ramasse -------------------------
 
 def list_types(conn):
-    """param.code_type = 'T'  ->  [(code, libelle), ...] (ex: BA, BOUL, ELOI, CLAM)."""
+    """
+    param.code_type = 'T'  ->  [(code, libelle), ...] (ex: BA, BOUL, ELOI, CLAM).
+    Referentiel PARTAGE entre tous les sites (pas de CODE_BA sur `param`) :
+    voir services/parametres.py.
+    """
     cur = conn.cursor()
     cur.execute("select code, libelle from param where code_type = %s order by code", ("T",))
     return cur.fetchall()
@@ -43,30 +58,31 @@ def list_types(conn):
 
 # ----------------------------- Suggestion de date ------------------------
 
-def suggest_default_date(conn, code_ram):
+def suggest_default_date(conn, code_ba, code_ram):
     """
     Reprend la logique de fin de script de ramasse10_sql.py qui pre-remplit
     la date au lancement : elle part de la derniere ligne saisie dans
-    `histo` pour ce type de ramasse et propose le jour ouvre suivant
-    (en sautant le week-end sauf si le samedi est ouvre pour ce type).
+    `histo` pour ce site et ce type de ramasse et propose le jour ouvre
+    suivant (en sautant le week-end sauf si le samedi est ouvre pour ce
+    type).
 
     Retourne (date_jj_mm_aaaa, weekday) ou weekday: 0=Lundi..6=Dimanche.
     """
     cur = conn.cursor()
 
-    # Le samedi est-il travaille pour ce type de ramasse ?
+    # Le samedi est-il travaille pour ce type de ramasse (sur ce site) ?
     cur.execute(
-        "select count(*) from modeles where code_ram = %s and samedi = 1",
-        (code_ram,),
+        "select count(*) from modeles where code_ba = %s and code_ram = %s and samedi = 1",
+        (code_ba, code_ram),
     )
     wsamdi = cur.fetchone()[0] or 0
 
-    # Derniere date connue pour ce type (l'original prend le tout dernier
-    # id, tous types confondus ; ici on filtre par code_ram, plus correct
-    # des lors que l'appli sert plusieurs types de ramasse a la fois)
+    # Derniere date connue pour ce site/type (l'original prend le tout
+    # dernier id, tous types confondus ; ici on filtre par site+code_ram,
+    # plus correct des lors que l'appli sert plusieurs sites/types a la fois)
     cur.execute(
-        "select date_ram from histo where code_ram = %s order by id desc limit 1",
-        (code_ram,),
+        "select date_ram from histo where code_ba = %s and code_ram = %s order by id desc limit 1",
+        (code_ba, code_ram),
     )
     row = cur.fetchone()
 
@@ -91,20 +107,20 @@ def suggest_default_date(conn, code_ram):
 
 # ----------------------------- Creation de la journee --------------------
 
-def day_exists(conn, code_ram, date_amj):
+def day_exists(conn, code_ba, code_ram, date_amj):
     cur = conn.cursor()
     cur.execute(
-        "select count(*) from histo where code_ram = %s and date_ram = %s",
-        (code_ram, date_amj),
+        "select count(*) from histo where code_ba = %s and code_ram = %s and date_ram = %s",
+        (code_ba, code_ram, date_amj),
     )
     return (cur.fetchone()[0] or 0) > 0
 
 
-def create_day(conn, code_ram, date_amj, weekday):
+def create_day(conn, code_ba, code_ram, date_amj, weekday):
     """
     Equivalent de creer_histo(wc, wd, wjj) pour wjj in 0..5 : cree une
-    ligne histo (qte=0, rebut=0) pour chaque ligne de modele du type de
-    ramasse dont le jour de semaine correspondant est actif.
+    ligne histo (qte=0, rebut=0) pour chaque ligne de modele du site/type
+    de ramasse dont le jour de semaine correspondant est actif.
 
     weekday: 0=Lundi ... 5=Samedi (Dimanche non gere, comme l'original).
     """
@@ -116,92 +132,94 @@ def create_day(conn, code_ram, date_amj, weekday):
     # colonne controlee par nous-memes (whitelist JOUR_COLONNES), jamais
     # une valeur utilisateur -> pas de risque d'injection ici.
     cur.execute(
-        f"select * from modeles where code_ram = %s and {colonne} = 1 order by magasin, nolig",
-        (code_ram,),
+        f"""select magasin, nom, codfour, nolig, codart, libart, depot
+            from modeles where code_ba = %s and code_ram = %s and {colonne} = 1
+            order by magasin, nolig""",
+        (code_ba, code_ram),
     )
     rows = cur.fetchall()
 
     cur_ins = conn.cursor()
-    for row in rows:
-        # modeles: id,code_ram,magasin,nom,lundi,mardi,mercredi,jeudi,
-        #          vendredi,codfour,nolig,codart,libart,depot,partenaire,
-        #          samedi,rebut
+    for magasin, nom, codfour, nolig, codart, libart, depot in rows:
         cur_ins.execute(
             """insert into histo
-               (id, code_ram, date_ram, magasin, nom, codfour, nolig, codart, libart, qte, rebut, depot)
-               values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (0, row[1], date_amj, row[2], row[3], row[9], row[10], row[11], row[12], 0, 0, row[13]),
+               (id, code_ram, code_ba, date_ram, magasin, nom, codfour, nolig, codart, libart, qte, rebut, depot)
+               values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (0, code_ram, code_ba, date_amj, magasin, nom, codfour, nolig, codart, libart, 0, 0, depot),
         )
     conn.commit()
 
 
-def add_store(conn, code_ram, date_amj, magasin):
+def add_store(conn, code_ba, code_ram, date_amj, magasin):
     """Equivalent de creer_histo(wc, wd, 9) : ajoute un magasin non prevu ce jour-la."""
     cur = conn.cursor()
     cur.execute(
-        "select * from modeles where code_ram = %s and magasin = %s order by magasin, nolig",
-        (code_ram, str(magasin)),
+        """select magasin, nom, codfour, nolig, codart, libart, depot
+           from modeles where code_ba = %s and code_ram = %s and magasin = %s
+           order by magasin, nolig""",
+        (code_ba, code_ram, str(magasin)),
     )
     rows = cur.fetchall()
 
     cur_ins = conn.cursor()
-    for row in rows:
+    for magasin_, nom, codfour, nolig, codart, libart, depot in rows:
         cur_ins.execute(
             """insert into histo
-               (id, code_ram, date_ram, magasin, nom, codfour, nolig, codart, libart, qte, rebut, depot)
-               values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (0, row[1], date_amj, row[2], row[3], row[9], row[10], row[11], row[12], 0, 0, row[13]),
+               (id, code_ram, code_ba, date_ram, magasin, nom, codfour, nolig, codart, libart, qte, rebut, depot)
+               values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (0, code_ram, code_ba, date_amj, magasin_, nom, codfour, nolig, codart, libart, 0, 0, depot),
         )
     conn.commit()
 
 
 # ----------------------------- Magasins de la journee ---------------------
 
-def get_scheduled_stores(conn, code_ram, date_amj):
+def get_scheduled_stores(conn, code_ba, code_ram, date_amj):
     """Magasins deja presents dans histo pour cette journee, tries par code magasin (= tablo/garnir_box)."""
     cur = conn.cursor()
     cur.execute(
-        "select distinct magasin, nom from histo where code_ram = %s and date_ram = %s order by magasin asc",
-        (code_ram, date_amj),
+        """select distinct magasin, nom from histo
+           where code_ba = %s and code_ram = %s and date_ram = %s order by magasin asc""",
+        (code_ba, code_ram, date_amj),
     )
     return cur.fetchall()
 
 
-def get_addable_stores(conn, code_ram, date_amj):
-    """Magasins du type de ramasse pas encore presents ce jour-la (pour 'Ajouter un magasin')."""
-    scheduled = {str(m) for m, _ in get_scheduled_stores(conn, code_ram, date_amj)}
+def get_addable_stores(conn, code_ba, code_ram, date_amj):
+    """Magasins du site/type de ramasse pas encore presents ce jour-la (pour 'Ajouter un magasin')."""
+    scheduled = {str(m) for m, _ in get_scheduled_stores(conn, code_ba, code_ram, date_amj)}
     cur = conn.cursor()
     cur.execute(
-        "select magasin, nom from modeles where code_ram = %s and nolig = 1 order by magasin",
-        (code_ram,),
+        "select magasin, nom from modeles where code_ba = %s and code_ram = %s and nolig = 1 order by magasin",
+        (code_ba, code_ram),
     )
     return [(m, nom) for m, nom in cur.fetchall() if str(m) not in scheduled]
 
 
-def get_store_lines(conn, code_ram, date_amj, magasin):
+def get_store_lines(conn, code_ba, code_ram, date_amj, magasin):
     """Lignes histo (jusqu'a 10) du magasin courant, triees par nolig (= contenu de l'ecran de detail)."""
     cur = conn.cursor()
     cur.execute(
         """select id, magasin, nom, nolig, codart, libart, qte, rebut
-           from histo where code_ram = %s and date_ram = %s and magasin = %s
+           from histo where code_ba = %s and code_ram = %s and date_ram = %s and magasin = %s
            order by nolig""",
-        (code_ram, date_amj, str(magasin)),
+        (code_ba, code_ram, date_amj, str(magasin)),
     )
     cols = ["id", "magasin", "nom", "nolig", "codart", "libart", "qte", "rebut"]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def get_first_store(conn, code_ram, date_amj):
+def get_first_store(conn, code_ba, code_ram, date_amj):
     cur = conn.cursor()
     cur.execute(
-        "select min(magasin) from histo where code_ram = %s and date_ram = %s",
-        (code_ram, date_amj),
+        "select min(magasin) from histo where code_ba = %s and code_ram = %s and date_ram = %s",
+        (code_ba, code_ram, date_amj),
     )
     row = cur.fetchone()
     return row[0] if row and row[0] is not None else None
 
 
-def get_adjacent_store(conn, code_ram, date_amj, magasin, sens):
+def get_adjacent_store(conn, code_ba, code_ram, date_amj, magasin, sens):
     """
     sens='S' (Suivant) -> plus petit magasin strictement superieur au courant
     sens='P' (Precedent) -> plus grand magasin strictement inferieur au courant
@@ -210,13 +228,15 @@ def get_adjacent_store(conn, code_ram, date_amj, magasin, sens):
     cur = conn.cursor()
     if sens == "S":
         cur.execute(
-            "select min(magasin) from histo where code_ram = %s and date_ram = %s and magasin > %s",
-            (code_ram, date_amj, str(magasin)),
+            """select min(magasin) from histo
+               where code_ba = %s and code_ram = %s and date_ram = %s and magasin > %s""",
+            (code_ba, code_ram, date_amj, str(magasin)),
         )
     else:
         cur.execute(
-            "select max(magasin) from histo where code_ram = %s and date_ram = %s and magasin < %s",
-            (code_ram, date_amj, str(magasin)),
+            """select max(magasin) from histo
+               where code_ba = %s and code_ram = %s and date_ram = %s and magasin < %s""",
+            (code_ba, code_ram, date_amj, str(magasin)),
         )
     row = cur.fetchone()
     return row[0] if row and row[0] is not None else None
@@ -240,13 +260,20 @@ def validate_lines(lines):
     return None
 
 
-def save_lines(conn, lines):
-    """Equivalent de maj() : met a jour qte/rebut de chaque ligne (par id)."""
+def save_lines(conn, code_ba, lines):
+    """
+    Equivalent de maj() : met a jour qte/rebut de chaque ligne (par id).
+    Le filtre `and code_ba = %s` est une protection ajoutee (absente de
+    l'original, qui n'avait pas cette notion) : sans lui, un identifiant
+    de ligne modifie dans le formulaire par un utilisateur d'un site
+    aurait pu mettre a jour la ligne d'un AUTRE site (les id sont de
+    simples entiers auto-incrementes, partages entre tous les sites).
+    """
     cur = conn.cursor()
     for line in lines:
         cur.execute(
-            "update histo set qte = %s, rebut = %s where id = %s",
-            (line["qte"], line["rebut"], line["id"]),
+            "update histo set qte = %s, rebut = %s where id = %s and code_ba = %s",
+            (line["qte"], line["rebut"], line["id"], code_ba),
         )
     conn.commit()
 
@@ -256,15 +283,16 @@ def store_total(lines):
     return sum(float(l["qte"] or 0) for l in lines)
 
 
-def cumul_totals(conn, code_ram, date_amj, codarts, exclude_magasin=None):
+def cumul_totals(conn, code_ba, code_ram, date_amj, codarts, exclude_magasin=None):
     """
     Equivalent de cumul(wc, wd, codart) applique a une liste de codes
     article : total (qte - rebut) toutes lignes/tous magasins confondus
-    pour cette journee, par article (= colonne "Totaux" de l'ecran 2).
+    pour cette journee (sur ce site), par article (= colonne "Totaux" de
+    l'ecran 2).
 
     exclude_magasin (optionnel) : exclut entierement ce magasin du calcul
     (equivalent de cumul2, mais sur tout le magasin plutot qu'une seule
-    ligne : voir _totaux_hors_magasin ci-dessous, utilisee pour la mise a
+    ligne : voir totaux_hors_magasin ci-dessous, utilisee pour la mise a
     jour en direct du total pendant la saisie).
     """
     if not codarts:
@@ -272,8 +300,8 @@ def cumul_totals(conn, code_ram, date_amj, codarts, exclude_magasin=None):
     cur = conn.cursor()
     placeholders = ",".join(["%s"] * len(codarts))
     sql = f"""select codart, sum(qte - rebut) from histo
-              where code_ram = %s and date_ram = %s and codart in ({placeholders})"""
-    params = [code_ram, date_amj, *codarts]
+              where code_ba = %s and code_ram = %s and date_ram = %s and codart in ({placeholders})"""
+    params = [code_ba, code_ram, date_amj, *codarts]
     if exclude_magasin is not None:
         sql += " and magasin != %s"
         params.append(str(exclude_magasin))
@@ -282,7 +310,7 @@ def cumul_totals(conn, code_ram, date_amj, codarts, exclude_magasin=None):
     return {codart: round(float(total or 0), 3) for codart, total in cur.fetchall()}
 
 
-def totaux_hors_magasin(conn, code_ram, date_amj, magasin, codarts):
+def totaux_hors_magasin(conn, code_ba, code_ram, date_amj, magasin, codarts):
     """
     Pour chaque code article de `codarts` : le total (qte - rebut) deja
     enregistre pour TOUS LES AUTRES magasins ce jour-la (le magasin
@@ -293,32 +321,32 @@ def totaux_hors_magasin(conn, code_ram, date_amj, magasin, codarts):
     dans le programme d'origine, qui recalculait ce total a chaque sortie
     de champ.
     """
-    return cumul_totals(conn, code_ram, date_amj, codarts, exclude_magasin=magasin)
+    return cumul_totals(conn, code_ba, code_ram, date_amj, codarts, exclude_magasin=magasin)
 
 
 # ----------------------------- Fin de journee -----------------------------
 
-def day_total(conn, code_ram, date_amj):
+def day_total(conn, code_ba, code_ram, date_amj):
     cur = conn.cursor()
     cur.execute(
-        "select sum(qte) from histo where code_ram = %s and date_ram = %s",
-        (code_ram, date_amj),
+        "select sum(qte) from histo where code_ba = %s and code_ram = %s and date_ram = %s",
+        (code_ba, code_ram, date_amj),
     )
     row = cur.fetchone()
     return float(row[0]) if row and row[0] is not None else 0.0
 
 
-def delete_day(conn, code_ram, date_amj):
+def delete_day(conn, code_ba, code_ram, date_amj):
     """Equivalent de la purge dans quit_page2 quand tout est a zero."""
     cur = conn.cursor()
     cur.execute(
-        "delete from histo where code_ram = %s and date_ram = %s",
-        (code_ram, date_amj),
+        "delete from histo where code_ba = %s and code_ram = %s and date_ram = %s",
+        (code_ba, code_ram, date_amj),
     )
     conn.commit()
 
 
-def empty_stores(conn, code_ram, date_amj):
+def empty_stores(conn, code_ba, code_ram, date_amj):
     """
     Equivalent de la boucle de valider_page2 qui repere les magasins dont
     le total saisi est a zero, pour demander confirmation ('Attention rien
@@ -327,9 +355,9 @@ def empty_stores(conn, code_ram, date_amj):
     cur = conn.cursor()
     cur.execute(
         """select magasin, nom, sum(qte) from histo
-           where code_ram = %s and date_ram = %s
+           where code_ba = %s and code_ram = %s and date_ram = %s
            group by magasin, nom order by magasin""",
-        (code_ram, date_amj),
+        (code_ba, code_ram, date_amj),
     )
     return [nom for _, nom, total in cur.fetchall() if not total]
 
@@ -340,11 +368,14 @@ _NOMS_FICHIERS_ACHAT = {"BA": "ramas", "ELOI": "rameloi", "BOUL": "boulang", "CL
 _NOMS_FICHIERS_REBUT = {"BA": "rebut", "ELOI": "rebeloi", "BOUL": "rebboul"}
 
 
-def export_csv(conn, code_ram, date_amj, csv_dir, code_ba):
+def export_csv(conn, code_ba, code_ram, date_amj, csv_dir):
     """
     Port fidele de exporter() : genere les 2 fichiers CSV attendus par
     l'import VIF (reception + rebuts), au meme format ';' / encodage ANSI.
-    Retourne (nom_fichier_achat_ou_None, nb_lignes_achat, nom_fichier_rebut_ou_None, nb_lignes_rebut).
+    `code_ba` sert a la fois a filtrer les lignes du site courant et,
+    comme dans l'original, a composer certains champs du CSV (colonne
+    site, code-lot). Retourne
+    (nom_fichier_achat_ou_None, nb_lignes_achat, nom_fichier_rebut_ou_None, nb_lignes_rebut).
     """
     os.makedirs(csv_dir, exist_ok=True)
 
@@ -353,25 +384,22 @@ def export_csv(conn, code_ram, date_amj, csv_dir, code_ba):
 
     cur = conn.cursor()
     cur.execute(
-        "select * from histo where code_ram = %s and date_ram = %s order by magasin asc, nolig",
-        (code_ram, date_amj),
+        """select nom, codfour, codart, qte, rebut, depot
+           from histo where code_ba = %s and code_ram = %s and date_ram = %s
+           order by magasin asc, nolig""",
+        (code_ba, code_ram, date_amj),
     )
     rows = cur.fetchall()
-    # histo: id,code_ram,date_ram,magasin,nom,codfour,nolig,codart,libart,qte,rebut,depot
 
     achat, divers = [], []
 
-    for enr in rows:
-        wqte, wrebut = enr[9], enr[10]
-        codfour = enr[5]
+    for nom, codfour, codart, wqte, wrebut, depot in rows:
         if len(codfour) == 7:
             codfour = "0" + codfour
-        codart = enr[7]
         if len(codart) == 6:
             codart = "0" + codart
         loti = codart[6:7]
-        libfour = enr[4]
-        depot = enr[11]
+        libfour = nom
         un = "KG"
         lot = "" if loti == "0" else (code_ba + "RA" + codart)
         origine = "RA"
@@ -384,8 +412,8 @@ def export_csv(conn, code_ram, date_amj, csv_dir, code_ba):
 
         cur_p = conn.cursor()
         cur_p.execute(
-            "select partenaire from modeles where code_ram = %s and codfour = %s and nolig = 1",
-            (code_ram, codfour),
+            "select partenaire from modeles where code_ba = %s and code_ram = %s and codfour = %s and nolig = 1",
+            (code_ba, code_ram, codfour),
         )
         p = cur_p.fetchone()
         lib_partenaire = p[0] if p else ""

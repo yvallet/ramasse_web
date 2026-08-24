@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ "Nouvel utilisateur" if mode == "creation" else "Modifier un utilisateur" }}{% endblock %}
+{% block content %}
+<h2>{{ "Creation d'un utilisateur" if mode == "creation" else "Modification d'un utilisateur" }}</h2>
+
+<form method="post" class="champs-entete">
+  <div class="champ">
+    <label for="login">Login (adresse email)</label>
+    {% if mode == "creation" %}
+      <input type="email" name="login" id="login" value="{{ utilisateur.login or '' }}" required autofocus>
+    {% else %}
+      <input type="email" value="{{ utilisateur.login }}" disabled>
+    {% endif %}
+  </div>
+
+  {% if mode == "creation" %}
+    <div class="champ">
+      <label for="mot_de_passe">Mot de passe initial</label>
+      <input type="password" name="mot_de_passe" id="mot_de_passe" required>
+    </div>
+  {% else %}
+    <div class="champ">
+      <label for="nouveau_mot_de_passe">Nouveau mot de passe (laisser vide pour ne pas le changer)</label>
+      <input type="password" name="nouveau_mot_de_passe" id="nouveau_mot_de_passe">
+    </div>
+  {% endif %}
+
+  <div class="champ">
+    <label for="code_ba">CODE_BA</label>
+    <input type="text" name="code_ba" id="code_ba" value="{{ utilisateur.code_ba or '' }}" required>
+  </div>
+
+  <div class="champ">
+    <label for="nom_ba">Nom du BA</label>
+    <input type="text" name="nom_ba" id="nom_ba" value="{{ utilisateur.nom_ba or '' }}" required>
+  </div>
+
+  <p class="aide">
+    Convention : CODE_BA = '00' identifie l'administrateur (seul a acceder
+    a ce menu Utilisateurs). Tout autre CODE_BA est un site normal, avec
+    son propre ecran de saisie, ses propres magasins et son propre
+    historique.
+    {% if mode == "modification" %}
+      Attention : si vous changez le CODE_BA du compte avec lequel vous
+      etes actuellement connecte, vous perdrez l'acces a ce menu apres
+      votre prochaine connexion.
+    {% endif %}
+  </p>
+
+  <div class="champ actions">
+    <a href="{{ url_for('admin.utilisateurs_liste') }}" class="bouton">Annuler</a>
+    <button type="submit" class="bouton bouton-valide">Enregistrer</button>
+  </div>
+</form>
+{% endblock %}

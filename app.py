@@ -1,17 +1,22 @@
 # coding: utf8
 """
 Ramasse journaliere - version web (Flask), portage de ramasse10_sql.py :
+  - Authentification (voir auth.py) : fonctionnalite absente de
+    l'original, ajoutee pour un usage multi-site sur un serveur partage.
+    Chaque compte utilisateur (table `user`) est rattache a un CODE_BA
+    (le site), qui remplace desormais le CODE_BA jusque-la fixe dans le
+    .env - voir services/utilisateurs.py.
   - Page 1 (saisie) : choix du type de ramasse + date de tournee
   - Page 2 (detail) : saisie des quantites/rebuts par magasin, navigation
     Suivant/Precedent, ajout d'un magasin non prevu, validation de fin de
     journee (export CSV VIF) ou sortie sans export.
   - Administration (voir admin.py) : gestion des magasins, des
-    fournisseurs, des articles et des types de ramasse.
+    fournisseurs, des articles, des types de ramasse, epuration de
+    l'historique, sauvegarde SQL complete, et (reserve a l'administrateur,
+    CODE_BA='00') gestion des comptes utilisateur.
 
-Ecrans NON repris (deliberement, hors du perimetre convenu) : epuration
-de l'historique, sauvegarde, impression d'etiquettes / bon de reception
-PDF. Ils reposent sur le meme schema MySQL et pourront etre ajoutes de la
-meme maniere par la suite.
+Ecrans NON repris (deliberement, hors du perimetre convenu) : impression
+d'etiquettes / bon de reception PDF.
 """
 import logging
 import os
@@ -20,10 +25,12 @@ from logging.handlers import RotatingFileHandler
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 
+import auth
 import db
 from config import Config
 from services import dateutils as du
 from services import ramasse as rs
+from services import utilisateurs as su
 
 
 def create_app():
@@ -33,7 +40,11 @@ def create_app():
     _configurer_logs(app)
 
     from admin import admin_bp
+    from auth import auth_bp
     app.register_blueprint(admin_bp)
+    app.register_blueprint(auth_bp)
+
+    _assurer_admin_par_defaut(app)
 
     return app
 
@@ -60,7 +71,35 @@ def _configurer_logs(app):
     app.logger.info("Demarrage de l'application (log : %s)", chemin)
 
 
+def _assurer_admin_par_defaut(app):
+    """
+    Cree le compte administrateur par defaut (voir services/utilisateurs.py)
+    au demarrage, si la table `user` existe deja (migration SQL executee)
+    et qu'il n'existe pas encore. N'empeche jamais le demarrage de
+    l'application : si la table `user` n'existe pas encore, ou si la base
+    n'est pas joignable, l'erreur est journalisee et ignoree (le compte
+    sera cree au prochain redemarrage, une fois la migration executee).
+    """
+    with app.app_context():
+        try:
+            conn = db.get_db()
+            if su.assurer_admin_par_defaut(conn):
+                app.logger.info(
+                    "Compte administrateur par defaut cree (yvmaison@free.fr) "
+                    "- changez son mot de passe des la premiere connexion."
+                )
+        except Exception as e:
+            app.logger.warning(
+                "Compte administrateur par defaut non verifie/cree (migration SQL pas encore executee ?) : %s", e
+            )
+
+
 app = create_app()
+
+
+def _code_ba_courant():
+    """CODE_BA de l'utilisateur connecte (garanti present : voir auth.py, protection globale des routes)."""
+    return auth.utilisateur_courant()["code_ba"]
 
 
 # --------------------------------------------------------------------- #
@@ -70,12 +109,13 @@ app = create_app()
 @app.route("/", methods=["GET"])
 def saisie():
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     types = list_types_safe(conn)
 
     code_ram = request.args.get("type", "")
     date_defaut, weekday = ("", None)
     if code_ram:
-        date_defaut, weekday = rs.suggest_default_date(conn, code_ram)
+        date_defaut, weekday = rs.suggest_default_date(conn, code_ba, code_ram)
     else:
         date_defaut = du.date_jour()
         weekday = datetime.today().weekday()
@@ -99,6 +139,7 @@ def list_types_safe(conn):
 @app.route("/saisie/valider", methods=["POST"])
 def saisie_valider():
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     code_ram = (request.form.get("type") or "").strip()
     date_saisie = (request.form.get("date") or "").strip()
 
@@ -118,10 +159,10 @@ def saisie_valider():
 
     date_amj = du.amj(date_norm)
 
-    if not rs.day_exists(conn, code_ram, date_amj):
-        rs.create_day(conn, code_ram, date_amj, weekday)
+    if not rs.day_exists(conn, code_ba, code_ram, date_amj):
+        rs.create_day(conn, code_ba, code_ram, date_amj, weekday)
 
-    premier = rs.get_first_store(conn, code_ram, date_amj)
+    premier = rs.get_first_store(conn, code_ba, code_ram, date_amj)
     if premier is None:
         flash(
             "Aucun magasin programme ce jour-la pour ce type de ramasse. "
@@ -152,12 +193,13 @@ def _contexte_session():
 @app.route("/detail", methods=["GET"])
 def detail():
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     code_ram, date_amj = _contexte_session()
     if not code_ram:
         flash("Choisissez d'abord un type de ramasse et une date.", "error")
         return redirect(url_for("saisie"))
 
-    scheduled = rs.get_scheduled_stores(conn, code_ram, date_amj)
+    scheduled = rs.get_scheduled_stores(conn, code_ba, code_ram, date_amj)
     if not scheduled:
         flash("Aucun magasin pour cette journee. Ajoutez-en un ou changez de date.", "warning")
 
@@ -168,21 +210,21 @@ def detail():
     lines, totals, totaux_hors_magasin, nom_magasin = [], {}, {}, ""
     has_prev = has_next = None
     if magasin is not None:
-        lines = rs.get_store_lines(conn, code_ram, date_amj, magasin)
+        lines = rs.get_store_lines(conn, code_ba, code_ram, date_amj, magasin)
         codarts = [l["codart"] for l in lines]
-        totals = rs.cumul_totals(conn, code_ram, date_amj, codarts)
+        totals = rs.cumul_totals(conn, code_ba, code_ram, date_amj, codarts)
         # Base servant au recalcul en direct cote navigateur (voir detail.js) :
         # total de TOUS LES AUTRES magasins pour cet article, sur laquelle le
         # navigateur ajoute la saisie en cours du magasin affiche, ligne par
         # ligne, sans recharger la page (equivalent de cumul2() a chaque
         # sortie de champ dans le programme d'origine).
-        totaux_hors_magasin = rs.totaux_hors_magasin(conn, code_ram, date_amj, magasin, codarts)
+        totaux_hors_magasin = rs.totaux_hors_magasin(conn, code_ba, code_ram, date_amj, magasin, codarts)
         nom_magasin = lines[0]["nom"] if lines else ""
-        has_prev = rs.get_adjacent_store(conn, code_ram, date_amj, magasin, "P")
-        has_next = rs.get_adjacent_store(conn, code_ram, date_amj, magasin, "S")
+        has_prev = rs.get_adjacent_store(conn, code_ba, code_ram, date_amj, magasin, "P")
+        has_next = rs.get_adjacent_store(conn, code_ba, code_ram, date_amj, magasin, "S")
         session["magasin"] = magasin
 
-    addable = rs.get_addable_stores(conn, code_ram, date_amj)
+    addable = rs.get_addable_stores(conn, code_ba, code_ram, date_amj)
 
     return render_template(
         "detail.html",
@@ -268,6 +310,7 @@ def detail_save():
     (= maj() + controle() + afficher_suivant()).
     """
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     code_ram, date_amj = _contexte_session()
     if not code_ram:
         return redirect(url_for("saisie"))
@@ -290,17 +333,17 @@ def detail_save():
         flash(erreur, "error")
         return redirect(url_for("detail", magasin=magasin))
 
-    rs.save_lines(conn, lignes)
+    rs.save_lines(conn, code_ba, lignes)
 
     if action == "suivant":
-        cible = rs.get_adjacent_store(conn, code_ram, date_amj, magasin, "S")
+        cible = rs.get_adjacent_store(conn, code_ba, code_ram, date_amj, magasin, "S")
         if cible is None:
             flash("Pas de suivant, fin de liste.", "warning")
             return redirect(url_for("detail", magasin=magasin))
         return redirect(url_for("detail", magasin=cible))
 
     if action == "precedent":
-        cible = rs.get_adjacent_store(conn, code_ram, date_amj, magasin, "P")
+        cible = rs.get_adjacent_store(conn, code_ba, code_ram, date_amj, magasin, "P")
         if cible is None:
             flash("Pas de precedent, fin de liste.", "warning")
             return redirect(url_for("detail", magasin=magasin))
@@ -314,13 +357,14 @@ def detail_save():
 def detail_add_store():
     """Equivalent du clic sur un magasin non prevu dans la listbox (creer_histo(..., 9))."""
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     code_ram, date_amj = _contexte_session()
     if not code_ram:
         return redirect(url_for("saisie"))
 
     magasin = request.form.get("nouveau_magasin")
     if magasin:
-        rs.add_store(conn, code_ram, date_amj, magasin)
+        rs.add_store(conn, code_ba, code_ram, date_amj, magasin)
         return redirect(url_for("detail", magasin=magasin))
 
     flash("Choisissez un magasin a ajouter.", "error")
@@ -331,12 +375,13 @@ def detail_add_store():
 def detail_quitter():
     """Equivalent de quit_page2() : sortie sans export, purge si tout est a zero."""
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     code_ram, date_amj = _contexte_session()
     if not code_ram:
         return redirect(url_for("saisie"))
 
-    if rs.day_total(conn, code_ram, date_amj) == 0:
-        rs.delete_day(conn, code_ram, date_amj)
+    if rs.day_total(conn, code_ba, code_ram, date_amj) == 0:
+        rs.delete_day(conn, code_ba, code_ram, date_amj)
         flash("Journee vide : aucune ligne enregistree, elle a ete supprimee.", "warning")
     else:
         flash("Sortie sans export des fichiers.", "warning")
@@ -352,6 +397,7 @@ def detail_quitter():
 def detail_terminer():
     """Equivalent de valider_page2() : verif magasins vides puis exporter()."""
     conn = db.get_db()
+    code_ba = _code_ba_courant()
     code_ram, date_amj = _contexte_session()
     if not code_ram:
         return redirect(url_for("saisie"))
@@ -373,9 +419,9 @@ def detail_terminer():
         if erreur:
             flash(erreur, "error")
             return redirect(url_for("detail", magasin=magasin))
-        rs.save_lines(conn, lignes)
+        rs.save_lines(conn, code_ba, lignes)
 
-    vides = rs.empty_stores(conn, code_ram, date_amj)
+    vides = rs.empty_stores(conn, code_ba, code_ram, date_amj)
     if vides and request.form.get("confirmed") != "1":
         return render_template(
             "confirmer_fin.html",
@@ -385,7 +431,7 @@ def detail_terminer():
         )
 
     nom_achat, nb_achat, nom_rebut, nb_rebut = rs.export_csv(
-        conn, code_ram, date_amj, app.config["CSV_EXPORT_DIR"], app.config["CODE_BA"]
+        conn, code_ba, code_ram, date_amj, app.config["CSV_EXPORT_DIR"]
     )
 
     msg = "Fichiers a importer : reception = %s (%s lignes), rebuts = %s (%s lignes)" % (

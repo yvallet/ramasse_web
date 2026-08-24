@@ -8,16 +8,23 @@ Un "magasin" au sens de cet ecran, c'est un couple (type de ramasse,
 code magasin) avec un nom, des jours de collecte (lundi..samedi), et une
 liste de lignes (1 par article collecte : code article, designation,
 depot, fournisseur). C'est exactement ce que decrit chaque groupe de
-lignes `modeles` partageant le meme (code_ram, magasin).
+lignes `modeles` partageant le meme (code_ba, code_ram, magasin).
 
 Differences volontaires par rapport a l'original :
+- Cloisonnement multi-site (CODE_BA) : fonctionnalite absente de
+  l'original. Toutes les fonctions ci-dessous prennent desormais
+  `code_ba` en premier parametre (le CODE_BA de l'utilisateur connecte,
+  voir auth.py) : un utilisateur ne voit et ne modifie que les magasins
+  de son propre site. Le referentiel articles/fournisseurs/types (table
+  `param`, voir services/parametres.py) reste en revanche partage entre
+  tous les sites.
 - Le type de ramasse (code_ram) est choisi dans une liste (les types deja
-  crees via la gestion des types) plutot que saisi en texte libre : cela
-  evite de creer un magasin avec un type inexistant, ce que l'original ne
-  controlait pas (veriftype() existe mais n'est jamais appelee sur ce
-  champ dans valid_mag()).
+  crees via la gestion des types) plutot que saisi en texte libre que
+  l'original ne controlait pas (veriftype() existe mais n'est jamais
+  appelee sur ce champ dans valid_mag()).
 - A la creation, on verifie que le couple (type, magasin) n'existe pas
-  deja - l'original inserait des lignes en double sans le signaler.
+  deja pour ce site - l'original inserait des lignes en double sans le
+  signaler.
 - Le champ "code fournisseur" d'en-tete de la fiche magasin (wcodfour/
   zcodfour dans l'original) etait valide (8 caracteres + code existant)
   mais jamais utilise pour l'enregistrement (chaque ligne a son propre
@@ -31,65 +38,69 @@ JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"]
 PARTENAIRES_VALIDES = ("", "COMERSO", "PHENIX")
 
 
-def liste_magasins(conn):
+def liste_magasins(conn, code_ba):
     """Equivalent de charger_magasins() : un magasin par ligne (nolig=1), pour le tableau recapitulatif."""
     cur = conn.cursor()
     cur.execute(
         """select code_ram, magasin, nom, lundi, mardi, mercredi, jeudi, vendredi, samedi
-           from modeles where nolig = 1 order by code_ram, magasin"""
+           from modeles where code_ba = %s and nolig = 1 order by code_ram, magasin""",
+        (code_ba,),
     )
     cols = ["code_ram", "magasin", "nom", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def magasin_existe(conn, code_ram, magasin):
+def magasin_existe(conn, code_ba, code_ram, magasin):
     cur = conn.cursor()
     cur.execute(
-        "select count(*) from modeles where code_ram = %s and magasin = %s",
-        (code_ram, str(magasin)),
+        "select count(*) from modeles where code_ba = %s and code_ram = %s and magasin = %s",
+        (code_ba, code_ram, str(magasin)),
     )
     return (cur.fetchone()[0] or 0) > 0
 
 
-def get_magasin(conn, code_ram, magasin):
+def get_magasin(conn, code_ba, code_ram, magasin):
     """
     Equivalent de la partie chargement de modif_cre() : renvoie
-    {header: {...}, lignes: [...]}  ou None si le magasin n'existe pas.
+    {header: {...}, lignes: [...]}  ou None si le magasin n'existe pas
+    pour ce site.
     """
     cur = conn.cursor()
     cur.execute(
-        "select * from modeles where code_ram = %s and magasin = %s order by nolig",
-        (code_ram, str(magasin)),
+        """select magasin, nom, partenaire, rebut, lundi, mardi, mercredi, jeudi, vendredi, samedi,
+                  nolig, codart, libart, depot, codfour
+           from modeles where code_ba = %s and code_ram = %s and magasin = %s
+           order by nolig""",
+        (code_ba, code_ram, str(magasin)),
     )
     rows = cur.fetchall()
     if not rows:
         return None
 
-    # modeles: id,code_ram,magasin,nom,lundi,mardi,mercredi,jeudi,vendredi,
-    #          codfour,nolig,codart,libart,depot,partenaire,samedi,rebut
     premiere = rows[0]
     header = {
-        "code_ram": premiere[1],
-        "magasin": premiere[2],
-        "nom": premiere[3],
-        "partenaire": premiere[14] or "",
-        "rebut": premiere[16] or "N",
+        "code_ram": code_ram,
+        "magasin": premiere[0],
+        "nom": premiere[1],
+        "partenaire": premiere[2] or "",
+        "rebut": premiere[3] or "N",
         "lundi": bool(premiere[4]),
         "mardi": bool(premiere[5]),
         "mercredi": bool(premiere[6]),
         "jeudi": bool(premiere[7]),
         "vendredi": bool(premiere[8]),
-        "samedi": bool(premiere[15]),
+        "samedi": bool(premiere[9]),
     }
     lignes = [
-        {"nolig": r[10], "codart": r[11], "libart": r[12], "depot": r[13], "codfour": r[9]}
+        {"nolig": r[10], "codart": r[11], "libart": r[12], "depot": r[13], "codfour": r[14]}
         for r in rows
     ]
     return {"header": header, "lignes": lignes}
 
 
 def verifier_article(conn, code):
-    """Equivalent de verif()/verifart() : le code existe-t-il dans param('A')? Renvoie (ok, libelle)."""
+    """Equivalent de verif()/verifart() : le code existe-t-il dans param('A')? Renvoie (ok, libelle).
+    Referentiel partage entre tous les sites (pas de CODE_BA sur `param`)."""
     cur = conn.cursor()
     cur.execute("select libelle from param where code_type = 'A' and code = %s", (code,))
     row = cur.fetchone()
@@ -97,19 +108,20 @@ def verifier_article(conn, code):
 
 
 def verifier_fournisseur(conn, code):
-    """Equivalent de verif2()/veriffour()."""
+    """Equivalent de verif2()/veriffour(). Referentiel partage entre tous les sites."""
     cur = conn.cursor()
     cur.execute("select libelle from param where code_type = 'F' and code = %s", (code,))
     row = cur.fetchone()
     return (True, row[0]) if row else (False, None)
 
 
-def valider_magasin(conn, header, lignes, code_ram_existant=None, magasin_existant=None):
+def valider_magasin(conn, code_ba, header, lignes, code_ram_existant=None, magasin_existant=None):
     """
     Equivalent de la section controle de valid_mag(). Renvoie la liste des
     messages d'erreur (vide si tout est valide). `code_ram_existant`/
     `magasin_existant` : si fournis (cas modification), on autorise ce
-    couple a "deja exister" (c'est lui-meme).
+    couple a "deja exister" (c'est lui-meme) - la comparaison reste au
+    sein du site courant (`code_ba`), deja implicite partout ailleurs.
     """
     erreurs = []
 
@@ -154,8 +166,8 @@ def valider_magasin(conn, header, lignes, code_ram_existant=None, magasin_exista
             erreurs.append(f"Ligne {i} : le code fournisseur {codfour} n'existe pas (voir Gestion des fournisseurs).")
 
     if not erreurs:
-        # Couple (type, magasin) deja pris par un AUTRE magasin ?
-        cible_existe = magasin_existe(conn, header["code_ram"], header["magasin"])
+        # Couple (type, magasin) deja pris par un AUTRE magasin de ce site ?
+        cible_existe = magasin_existe(conn, code_ba, header["code_ram"], header["magasin"])
         est_lui_meme = (
             code_ram_existant is not None
             and str(code_ram_existant) == str(header["code_ram"])
@@ -169,7 +181,7 @@ def valider_magasin(conn, header, lignes, code_ram_existant=None, magasin_exista
     return erreurs
 
 
-def enregistrer_magasin(conn, header, lignes):
+def enregistrer_magasin(conn, code_ba, header, lignes):
     """
     Equivalent de la partie enregistrement de valid_mag() : remplace
     entierement les lignes `modeles` du magasin (delete puis insert), que
@@ -179,18 +191,18 @@ def enregistrer_magasin(conn, header, lignes):
     """
     cur = conn.cursor()
     cur.execute(
-        "delete from modeles where code_ram = %s and magasin = %s",
-        (header["code_ram"], str(header["magasin"])),
+        "delete from modeles where code_ba = %s and code_ram = %s and magasin = %s",
+        (code_ba, header["code_ram"], str(header["magasin"])),
     )
 
     for i, ligne in enumerate(lignes, start=1):
         cur.execute(
             """insert into modeles
-               (code_ram, magasin, nom, lundi, mardi, mercredi, jeudi, vendredi,
+               (code_ram, code_ba, magasin, nom, lundi, mardi, mercredi, jeudi, vendredi,
                 codfour, nolig, codart, libart, depot, partenaire, samedi, rebut)
-               values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
-                header["code_ram"], str(header["magasin"]), header["nom"],
+                header["code_ram"], code_ba, str(header["magasin"]), header["nom"],
                 1 if header.get("lundi") else 0,
                 1 if header.get("mardi") else 0,
                 1 if header.get("mercredi") else 0,
@@ -205,11 +217,11 @@ def enregistrer_magasin(conn, header, lignes):
     conn.commit()
 
 
-def supprimer_magasin(conn, code_ram, magasin):
+def supprimer_magasin(conn, code_ba, code_ram, magasin):
     """Equivalent de sup_mag()."""
     cur = conn.cursor()
     cur.execute(
-        "delete from modeles where code_ram = %s and magasin = %s",
-        (code_ram, str(magasin)),
+        "delete from modeles where code_ba = %s and code_ram = %s and magasin = %s",
+        (code_ba, code_ram, str(magasin)),
     )
     conn.commit()
