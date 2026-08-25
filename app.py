@@ -110,7 +110,7 @@ def _code_ba_courant():
 def saisie():
     conn = db.get_db()
     code_ba = _code_ba_courant()
-    types = list_types_safe(conn)
+    types = list_types_safe(conn, code_ba)
 
     code_ram = request.args.get("type", "")
     date_defaut, weekday = ("", None)
@@ -129,9 +129,9 @@ def saisie():
     )
 
 
-def list_types_safe(conn):
+def list_types_safe(conn, code_ba):
     try:
-        return rs.list_types(conn)
+        return rs.list_types(conn, code_ba)
     except Exception:
         return []
 
@@ -229,6 +229,7 @@ def detail():
     return render_template(
         "detail.html",
         code_ram=code_ram,
+        nom_ram=rs.nom_type_ramasse(conn, code_ba, code_ram),
         date_norm=session.get("date_norm", du.jma(date_amj)),
         scheduled=scheduled,
         addable=addable,
@@ -239,6 +240,13 @@ def detail():
         totaux_hors_magasin=totaux_hors_magasin,
         has_prev=has_prev,
         has_next=has_next,
+        # Fonctionnalite absente de l'original, corrige un vrai piege :
+        # masque le menu/la deconnexion (voir templates/base.html) pour
+        # qu'un clic malencontreux ne fasse pas perdre la saisie en cours
+        # du magasin affiche (jamais enregistree tant qu'on n'a pas clique
+        # sur Enregistrer/Suivant/Precedent/Terminer). Seuls "Quitter" et
+        # "Terminer la journee" permettent desormais de sortir de cet ecran.
+        verrouiller_navigation=True,
     )
 
 
@@ -426,6 +434,7 @@ def detail_terminer():
         return render_template(
             "confirmer_fin.html",
             code_ram=code_ram,
+            nom_ram=rs.nom_type_ramasse(conn, code_ba, code_ram),
             date_norm=session.get("date_norm", du.jma(date_amj)),
             vides=vides,
         )

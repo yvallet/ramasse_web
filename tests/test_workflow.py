@@ -204,6 +204,18 @@ class RamasseLogicTests(unittest.TestCase):
         self.assertFalse(rs.day_exists(self.conn, "99", "BA", self.lundi_amj))  # site '99' : rien
         self.assertEqual(rs.get_scheduled_stores(self.conn, "99", "BA", self.lundi_amj), [])
 
+    def test_nom_type_ramasse(self):
+        # Fonctionnalite absente de l'original : le libelle du type de
+        # ramasse (ex: "Ramasse BA") est affiche a la place du code brut
+        # sur l'ecran de saisie (voir templates/detail.html).
+        self.assertEqual(rs.nom_type_ramasse(self.conn, self.code_ba, "BA"), "Ramasse BA")
+        # Type inconnu (ou supprime entre-temps) : on retombe sur le code
+        # plutot que de faire echouer l'affichage.
+        self.assertEqual(rs.nom_type_ramasse(self.conn, self.code_ba, "XXXXX"), "XXXXX")
+        # Meme code, autre site : chaque site a son propre libelle (Types
+        # de ramasse desormais propres a chaque site).
+        self.assertEqual(rs.nom_type_ramasse(self.conn, "99", "BA"), "BA")  # aucun type "BA" sur le site 99
+
 
 class FlaskRoutesSmokeTests(unittest.TestCase):
     """Verifie que les routes Flask s'enchainent sans erreur (bout en bout)."""
@@ -233,6 +245,23 @@ class FlaskRoutesSmokeTests(unittest.TestCase):
                               follow_redirects=True)
         self.assertEqual(r.status_code, 200)
         self.assertIn(b"Magasin Dix", r.data)
+        # Le nom du type de ramasse (libelle "Ramasse BA" de la fixture) est
+        # affiche a la place du code brut "BA" (fonctionnalite absente de
+        # l'original, ecran detail.html).
+        self.assertIn(b"Ramasse BA", r.data)
+        # Fonctionnalite absente de l'original, corrige un vrai piege
+        # signale : le menu (et la deconnexion) sont masques pendant la
+        # saisie par magasin, pour qu'un clic malencontreux ne fasse pas
+        # perdre une ligne non encore enregistree - seuls "Quitter" et
+        # "Terminer la journee" permettent d'en sortir.
+        self.assertNotIn(b'href="/admin/parametres/fournisseurs"', r.data)
+        self.assertNotIn(b"Se deconnecter", r.data)
+
+        # Ecran de saisie (page 1) : le menu reste normalement accessible,
+        # seul l'ecran de saisie par magasin (page 2) le masque.
+        r = self.client.get("/")
+        self.assertIn(b'href="/admin/parametres/fournisseurs"', r.data)
+        self.assertIn(b"Se deconnecter", r.data)
 
         # Enregistrer une ligne puis passer au magasin suivant
         r = self.client.post("/detail/save", data={
@@ -261,6 +290,11 @@ class FlaskRoutesSmokeTests(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 200)
         self.assertIn("Magasin Vingt".encode(), r.data)  # liste des magasins vides
+        self.assertIn(b"Ramasse BA", r.data)  # nom du type de ramasse, harmonise avec detail.html
+        # L'ecran de confirmation n'a pas de champ editable (juste
+        # Confirmer/Annuler) : le menu n'y est pas masque, contrairement a
+        # l'ecran de saisie par magasin.
+        self.assertIn(b'href="/admin/parametres/fournisseurs"', r.data)
 
         # Confirmation -> export reel
         r = self.client.post("/detail/terminer", data={"confirmed": "1"}, follow_redirects=True)

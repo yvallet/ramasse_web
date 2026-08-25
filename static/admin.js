@@ -28,6 +28,19 @@
           if (ligne) ligne.remove();
         }
       });
+
+      // Pre-remplit la designation avec le libelle de l'article choisi
+      // dans la liste deroulante, uniquement si le champ est encore vide
+      // (ne touche pas a une designation deja personnalisee).
+      tableLignes.addEventListener("change", function (evt) {
+        if (!evt.target.classList.contains("select-article")) return;
+        var ligne = evt.target.closest("tr");
+        var libart = ligne && ligne.querySelector('input[name="libart"]');
+        var option = evt.target.selectedOptions[0];
+        if (libart && !libart.value && option && option.dataset.libelle) {
+          libart.value = option.dataset.libelle;
+        }
+      });
     }
   });
 })();

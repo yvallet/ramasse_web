@@ -41,55 +41,123 @@ CODE_BA_AUTRE = "99"  # deuxieme site, utilise pour les tests de cloisonnement
 
 
 class ParametresTests(unittest.TestCase):
-    """services/parametres.py - fournisseurs / articles / types (table `param`, referentiel PARTAGE)."""
+    """
+    services/parametres.py - fournisseurs / articles / types (table
+    `param`). Fournisseurs et Types de ramasse sont desormais propres a
+    chaque site (fonctionnalite absente de l'original, voir
+    migration_param_code_ba.sql) ; les Articles restent un referentiel
+    PARTAGE entre tous les sites (exception demandee).
+    """
 
     def setUp(self):
         self.conn = build_test_db()
+        self.code_ba = CODE_BA_TEST  # '58' - correspond a la fixture de tests/db_shim.py
 
     def test_liste_filtre_par_type(self):
-        fournisseurs = sp.liste(self.conn, "F")
+        fournisseurs = sp.liste(self.conn, self.code_ba, "F")
         self.assertEqual(len(fournisseurs), 2)
-        types_ram = sp.liste(self.conn, "T")
+        types_ram = sp.liste(self.conn, self.code_ba, "T")
         self.assertEqual(types_ram, [("BA", "Ramasse BA")])
 
     def test_creer_et_relire(self):
-        sp.creer(self.conn, "T", "eloi", "Ramasse Saint Eloi")  # minuscule -> mis en majuscule
-        types_ram = dict(sp.liste(self.conn, "T"))
+        sp.creer(self.conn, self.code_ba, "T", "eloi", "Ramasse Saint Eloi")  # minuscule -> mis en majuscule
+        types_ram = dict(sp.liste(self.conn, self.code_ba, "T"))
         self.assertEqual(types_ram["ELOI"], "Ramasse Saint Eloi")
 
     def test_creer_refuse_code_deja_existant(self):
         with self.assertRaises(ValueError):
-            sp.creer(self.conn, "T", "BA", "Doublon")
+            sp.creer(self.conn, self.code_ba, "T", "BA", "Doublon")
 
     def test_creer_refuse_longueur_invalide(self):
         with self.assertRaises(ValueError):
-            sp.creer(self.conn, "F", "123", "Trop court")  # fournisseur : 8 caracteres attendus
+            sp.creer(self.conn, self.code_ba, "F", "123", "Trop court")  # fournisseur : 8 caracteres attendus
         with self.assertRaises(ValueError):
-            sp.creer(self.conn, "A", "12345678", "Trop long")  # article : 7 caracteres attendus
+            sp.creer(self.conn, self.code_ba, "A", "12345678", "Trop long")  # article : 7 caracteres attendus
         with self.assertRaises(ValueError):
-            sp.creer(self.conn, "T", "TROPLONG1", "Type trop long")  # type : 5 caracteres max
+            sp.creer(self.conn, self.code_ba, "T", "TROPLONG1", "Type trop long")  # type : 5 caracteres max
 
     def test_modifier_libelle(self):
-        sp.modifier(self.conn, "T", "BA", "Nouveau libelle")
-        self.assertEqual(dict(sp.liste(self.conn, "T"))["BA"], "Nouveau libelle")
+        sp.modifier(self.conn, self.code_ba, "T", "BA", "Nouveau libelle")
+        self.assertEqual(dict(sp.liste(self.conn, self.code_ba, "T"))["BA"], "Nouveau libelle")
 
     def test_modifier_code_inexistant_refuse(self):
         with self.assertRaises(ValueError):
-            sp.modifier(self.conn, "T", "XXXXX", "peu importe")
+            sp.modifier(self.conn, self.code_ba, "T", "XXXXX", "peu importe")
 
     def test_supprimer(self):
-        sp.creer(self.conn, "T", "CLAM", "Clamecy")
-        sp.supprimer(self.conn, "T", "CLAM")
-        self.assertNotIn("CLAM", dict(sp.liste(self.conn, "T")))
+        sp.creer(self.conn, self.code_ba, "T", "CLAM", "Clamecy")
+        sp.supprimer(self.conn, self.code_ba, "T", "CLAM")
+        self.assertNotIn("CLAM", dict(sp.liste(self.conn, self.code_ba, "T")))
 
     def test_supprimer_code_inexistant_refuse(self):
         with self.assertRaises(ValueError):
-            sp.supprimer(self.conn, "T", "XXXXX")
+            sp.supprimer(self.conn, self.code_ba, "T", "XXXXX")
 
     def test_compter_usages_magasins(self):
-        # 0119000 (Pain) est utilise par les 2 magasins de la fixture (10 et 20)
-        self.assertEqual(sp.compter_usages_magasins(self.conn, "A", "0119000"), 2)
-        self.assertEqual(sp.compter_usages_magasins(self.conn, "A", "9999999"), 0)
+        # 0119000 (Pain) est utilise par les 2 magasins de la fixture (10 et 20), tous deux du site '58'
+        self.assertEqual(sp.compter_usages_magasins(self.conn, self.code_ba, "A", "0119000"), 2)
+        self.assertEqual(sp.compter_usages_magasins(self.conn, self.code_ba, "A", "9999999"), 0)
+
+    # -- Cloisonnement multi-site (Fournisseurs / Types) : fonctionnalite absente de l'original --
+
+    def test_fournisseurs_et_types_isoles_entre_sites(self):
+        # Un fournisseur/type cree sur le site '58' est invisible pour un
+        # autre site (CODE_BA_AUTRE), et reciproquement.
+        self.assertEqual(sp.liste(self.conn, CODE_BA_AUTRE, "F"), [])
+        self.assertEqual(sp.liste(self.conn, CODE_BA_AUTRE, "T"), [])
+
+        sp.creer(self.conn, CODE_BA_AUTRE, "F", "09990001", "Fournisseur du site 99")
+        self.assertEqual(len(sp.liste(self.conn, CODE_BA_AUTRE, "F")), 1)
+        self.assertEqual(len(sp.liste(self.conn, self.code_ba, "F")), 2)  # site '58' inchange
+
+    def test_meme_code_fournisseur_autorise_sur_2_sites_differents(self):
+        # Le meme code fournisseur peut exister independamment sur 2 sites
+        # (l'unicite est desormais par site, pas globale) - sauf pour les
+        # Articles, qui restent un referentiel unique partage (voir plus bas).
+        sp.creer(self.conn, self.code_ba, "F", "09990001", "Vu depuis le site 58")
+        sp.creer(self.conn, CODE_BA_AUTRE, "F", "09990001", "Vu depuis le site 99")  # ne doit PAS lever
+        self.assertEqual(dict(sp.liste(self.conn, self.code_ba, "F"))["09990001"], "Vu depuis le site 58")
+        self.assertEqual(dict(sp.liste(self.conn, CODE_BA_AUTRE, "F"))["09990001"], "Vu depuis le site 99")
+
+    def test_modifier_et_supprimer_un_fournisseur_dun_autre_site_refuse(self):
+        # Un utilisateur du site '99' ne doit pas pouvoir modifier ou
+        # supprimer un fournisseur du site '58', meme en connaissant son code.
+        with self.assertRaises(ValueError):
+            sp.modifier(self.conn, CODE_BA_AUTRE, "F", "02580004", "Piratage")
+        with self.assertRaises(ValueError):
+            sp.supprimer(self.conn, CODE_BA_AUTRE, "F", "02580004")
+        # inchange, toujours accessible depuis le bon site
+        self.assertEqual(dict(sp.liste(self.conn, self.code_ba, "F"))["02580004"], "Leclerc Drive")
+
+    def test_compter_usages_magasins_fournisseur_isole_par_site(self):
+        # Un magasin du site '99' qui utiliserait par coincidence le meme
+        # code fournisseur qu'un magasin du site '58' ne doit pas etre
+        # compte dans l'usage du fournisseur du site '58'.
+        self.assertEqual(sp.compter_usages_magasins(self.conn, self.code_ba, "F", "02580004"), 1)  # magasin 10
+        self.assertEqual(sp.compter_usages_magasins(self.conn, CODE_BA_AUTRE, "F", "02580004"), 0)
+
+    def test_articles_restent_un_referentiel_partage(self):
+        # Exception explicitement demandee : les Articles ne sont PAS
+        # cloisonnes par site, quel que soit le code_ba de l'appelant.
+        self.assertEqual(sp.liste(self.conn, self.code_ba, "A"), sp.liste(self.conn, CODE_BA_AUTRE, "A"))
+
+        sp.creer(self.conn, CODE_BA_AUTRE, "A", "9998887", "Cree depuis le site 99")
+        # visible aussi bien depuis le site '58' que depuis le site '99'
+        self.assertIn("9998887", dict(sp.liste(self.conn, self.code_ba, "A")))
+        self.assertIn("9998887", dict(sp.liste(self.conn, CODE_BA_AUTRE, "A")))
+
+        # l'unicite d'un code article reste globale : un doublon est refuse
+        # meme depuis un site different de celui qui l'a cree.
+        with self.assertRaises(ValueError):
+            sp.creer(self.conn, self.code_ba, "A", "9998887", "Doublon depuis un autre site")
+
+    def test_modifier_et_supprimer_un_article_depuis_nimporte_quel_site(self):
+        # Coherent avec le referentiel partage : un article reste
+        # modifiable/supprimable quel que soit le code_ba de l'appelant.
+        sp.modifier(self.conn, CODE_BA_AUTRE, "A", "0119000", "Pain renomme depuis le site 99")
+        self.assertEqual(dict(sp.liste(self.conn, self.code_ba, "A"))["0119000"], "Pain renomme depuis le site 99")
+        sp.supprimer(self.conn, CODE_BA_AUTRE, "A", "0119000")
+        self.assertNotIn("0119000", dict(sp.liste(self.conn, self.code_ba, "A")))
 
 
 class MagasinsTests(unittest.TestCase):
@@ -165,6 +233,7 @@ class MagasinsTests(unittest.TestCase):
         # Le couple (code_ram, magasin) = ('BA', '10') existe deja pour le
         # site '58', mais pas pour le site '99' : la validation ne doit
         # pas le refuser sur un site different.
+        sp.creer(self.conn, CODE_BA_AUTRE, "F", "02580004", "Leclerc Drive (site 99)")  # fournisseur propre au site 99
         header, lignes = self._magasin_valide()
         header["magasin"] = "10"
         erreurs = sm.valider_magasin(self.conn, CODE_BA_AUTRE, header, lignes)
@@ -514,6 +583,28 @@ class AdminRoutesSmokeTests(unittest.TestCase):
         r = self.client_admin.get("/admin/magasins")
         self.assertEqual(r.status_code, 200)
         self.assertNotIn(b"Magasin Dix", r.data)
+
+    def test_formulaire_magasin_propose_les_listes_deroulantes_article_et_fournisseur(self):
+        # Fonctionnalite absente de l'original : le code article (liste
+        # partagee entre tous les sites) et le code fournisseur (propre au
+        # site connecte) sont desormais choisis dans une liste deroulante
+        # plutot que saisis en texte libre.
+        r = self.client.get("/admin/magasins/nouveau")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'<option value="0119000"', r.data)  # article (partage)
+        self.assertIn(b'<option value="02580004"', r.data)  # fournisseur du site 58
+
+    def test_formulaire_magasin_ne_propose_pas_les_fournisseurs_dun_autre_site(self):
+        sp.creer(self.conn, CODE_BA_AUTRE, "F", "09990001", "Fournisseur du site 99")
+        r = self.client.get("/admin/magasins/nouveau")  # connecte en tant que site 58
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn(b"09990001", r.data)
+
+    def test_formulaire_modification_magasin_preselectionne_larticle_et_le_fournisseur(self):
+        r = self.client.get("/admin/magasins/BA/10/modifier")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'<option value="0119000" data-libelle="Pain - Viennoiserie" selected', r.data)
+        self.assertIn(b'<option value="02580004" selected', r.data)
 
     def test_parametres_fournisseurs_ajout_modif_suppression(self):
         r = self.client.get("/admin/parametres/fournisseurs")

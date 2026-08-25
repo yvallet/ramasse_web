@@ -107,10 +107,10 @@ def verifier_article(conn, code):
     return (True, row[0]) if row else (False, None)
 
 
-def verifier_fournisseur(conn, code):
-    """Equivalent de verif2()/veriffour(). Referentiel partage entre tous les sites."""
+def verifier_fournisseur(conn, code_ba, code):
+    """Equivalent de verif2()/veriffour(). Fournisseurs propres a chaque site (fonctionnalite absente de l'original)."""
     cur = conn.cursor()
-    cur.execute("select libelle from param where code_type = 'F' and code = %s", (code,))
+    cur.execute("select libelle from param where code_ba = %s and code_type = 'F' and code = %s", (code_ba, code))
     row = cur.fetchone()
     return (True, row[0]) if row else (False, None)
 
@@ -162,7 +162,7 @@ def valider_magasin(conn, code_ba, header, lignes, code_ram_existant=None, magas
 
         if len(codfour) != 8:
             erreurs.append(f"Ligne {i} : le code fournisseur doit faire 8 caracteres.")
-        elif not verifier_fournisseur(conn, codfour)[0]:
+        elif not verifier_fournisseur(conn, code_ba, codfour)[0]:
             erreurs.append(f"Ligne {i} : le code fournisseur {codfour} n'existe pas (voir Gestion des fournisseurs).")
 
     if not erreurs:

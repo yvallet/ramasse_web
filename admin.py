@@ -15,11 +15,12 @@ Ecrans d'administration portes depuis ramasse10_sql.py :
 Regroupes dans un Blueprint separe de app.py (qui reste centre sur
 l'ecran de saisie journaliere) pour garder chaque fichier lisible.
 
-Cloisonnement multi-site (CODE_BA) : la gestion des magasins et
-l'epuration de l'historique sont desormais limitees au site (code_ba) de
-l'utilisateur connecte (voir auth.utilisateur_courant()) - jamais une
-valeur choisie par le navigateur. Les fournisseurs/articles/types restent
-un referentiel partage entre tous les sites (pas de CODE_BA sur `param`).
+Cloisonnement multi-site (CODE_BA) : la gestion des magasins, des
+fournisseurs, des types de ramasse et l'epuration de l'historique sont
+desormais limitees au site (code_ba) de l'utilisateur connecte (voir
+auth.utilisateur_courant()) - jamais une valeur choisie par le navigateur.
+Seuls les articles restent un referentiel partage entre tous les sites
+(exception demandee : code_ba reste a NULL pour ces lignes de `param`).
 """
 import os
 
@@ -101,7 +102,8 @@ def _lire_formulaire_magasin():
 def magasin_nouveau():
     conn = db.get_db()
     code_ba = _code_ba_courant()
-    types = sm_list_types_safe(conn)
+    types = sm_list_types_safe(conn, code_ba)
+    articles, fournisseurs = _listes_articles_fournisseurs_safe(conn, code_ba)
 
     if request.method == "POST":
         header, lignes = _lire_formulaire_magasin()
@@ -111,6 +113,7 @@ def magasin_nouveau():
                 flash(e, "error")
             return render_template(
                 "admin_magasin_form.html", mode="creation", types=types,
+                articles=articles, fournisseurs=fournisseurs,
                 header=header, lignes=lignes or [{}],
             )
         sm.enregistrer_magasin(conn, code_ba, header, lignes)
@@ -120,6 +123,7 @@ def magasin_nouveau():
 
     return render_template(
         "admin_magasin_form.html", mode="creation", types=types,
+        articles=articles, fournisseurs=fournisseurs,
         header={"rebut": "N"}, lignes=[{}],
     )
 
@@ -128,7 +132,8 @@ def magasin_nouveau():
 def magasin_modifier(code_ram, magasin):
     conn = db.get_db()
     code_ba = _code_ba_courant()
-    types = sm_list_types_safe(conn)
+    types = sm_list_types_safe(conn, code_ba)
+    articles, fournisseurs = _listes_articles_fournisseurs_safe(conn, code_ba)
 
     if request.method == "POST":
         header, lignes = _lire_formulaire_magasin()
@@ -141,6 +146,7 @@ def magasin_modifier(code_ram, magasin):
                 flash(e, "error")
             return render_template(
                 "admin_magasin_form.html", mode="modification", types=types,
+                articles=articles, fournisseurs=fournisseurs,
                 header=header, lignes=lignes or [{}],
                 code_ram_origine=code_ram, magasin_origine=magasin,
             )
@@ -162,6 +168,7 @@ def magasin_modifier(code_ram, magasin):
 
     return render_template(
         "admin_magasin_form.html", mode="modification", types=types,
+        articles=articles, fournisseurs=fournisseurs,
         header=fiche["header"], lignes=fiche["lignes"],
         code_ram_origine=code_ram, magasin_origine=magasin,
     )
@@ -177,24 +184,41 @@ def magasin_supprimer(code_ram, magasin):
     return redirect(url_for("admin.magasins_liste"))
 
 
-def sm_list_types_safe(conn):
+def sm_list_types_safe(conn, code_ba):
     from services import ramasse as rs
     try:
-        return rs.list_types(conn)
+        return rs.list_types(conn, code_ba)
     except Exception:
         return []
 
 
+def _listes_articles_fournisseurs_safe(conn, code_ba):
+    """
+    (articles, fournisseurs) pour peupler les listes deroulantes de la
+    fiche magasin (fonctionnalite absente de l'original, qui laissait ces
+    2 champs en saisie libre) : les Articles (referentiel partage entre
+    tous les sites) et les Fournisseurs du site courant. `try/except`
+    comme sm_list_types_safe, pour ne jamais faire echouer l'affichage du
+    formulaire si la table `param` n'est pas encore accessible.
+    """
+    try:
+        return sp.liste(conn, code_ba, "A"), sp.liste(conn, code_ba, "F")
+    except Exception:
+        return [], []
+
+
 # --------------------------------------------------------------------- #
 # Gestion des fournisseurs / articles / types de ramasse (table `param`)
-# Referentiel PARTAGE entre tous les sites (pas de CODE_BA sur `param`).
+# Fournisseurs et Types de ramasse sont desormais propres a chaque site
+# (fonctionnalite absente de l'original) ; les Articles restent un
+# referentiel PARTAGE entre tous les sites - voir services/parametres.py.
 # --------------------------------------------------------------------- #
 
 @admin_bp.route("/parametres/<slug>")
 def parametres_liste(slug):
     code_type = _code_type_ou_404(slug)
     conn = db.get_db()
-    entrees = sp.liste(conn, code_type)
+    entrees = sp.liste(conn, _code_ba_courant(), code_type)
 
     editer = request.args.get("editer")
     fiche_edition = None
@@ -216,7 +240,7 @@ def parametres_ajouter(slug):
     code_type = _code_type_ou_404(slug)
     conn = db.get_db()
     try:
-        sp.creer(conn, code_type, request.form.get("code"), request.form.get("libelle"))
+        sp.creer(conn, _code_ba_courant(), code_type, request.form.get("code"), request.form.get("libelle"))
         flash("Enregistrement ajoute.", "ok")
     except ValueError as e:
         flash(str(e), "error")
@@ -228,7 +252,7 @@ def parametres_modifier(slug, code):
     code_type = _code_type_ou_404(slug)
     conn = db.get_db()
     try:
-        sp.modifier(conn, code_type, code, request.form.get("libelle"))
+        sp.modifier(conn, _code_ba_courant(), code_type, code, request.form.get("libelle"))
         flash("Enregistrement modifie.", "ok")
     except ValueError as e:
         flash(str(e), "error")
@@ -240,7 +264,7 @@ def parametres_supprimer(slug, code):
     code_type = _code_type_ou_404(slug)
     conn = db.get_db()
     try:
-        sp.supprimer(conn, code_type, code)
+        sp.supprimer(conn, _code_ba_courant(), code_type, code)
         flash("Enregistrement supprime.", "ok")
     except ValueError as e:
         flash(str(e), "error")

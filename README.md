@@ -23,7 +23,12 @@ menu en haut de chaque page :
   `sup_mag()` de l'original) : liste des magasins/modeles existants,
   creation, modification et suppression - nom, partenaire (COMERSO/PHENIX),
   rebut possible, jours de collecte, et la liste des articles collectes
-  (code article, designation, depot, fournisseur).
+  (code article, designation, depot, fournisseur). **Difference volontaire :
+  le code article et le code fournisseur sont desormais choisis dans une
+  liste deroulante** (respectivement la liste des Articles, partagee entre
+  tous les sites, et la liste des Fournisseurs du site connecte) plutot que
+  saisis en texte libre comme dans l'original - la designation se
+  pre-remplit avec le libelle de l'article choisi (modifiable ensuite).
 - **Gestion des fournisseurs**, **Gestion des articles** et **Gestion des
   types de ramasse** (equivalent de l'ecran generique `fenetre9` /
   `charger_clients()` / `ajout_cli()` / `sup_cli()` de l'original, reutilise
@@ -91,19 +96,29 @@ d'etre connecte :
   devient accessible publiquement ; un vrai envoi d'email pourra etre
   ajoute plus tard sans tout reecrire (seule la route `/mot-de-passe-oublie`
   serait a changer).
-- Cloisonnement des donnees : les tables `histo` et `modeles` portent
-  desormais une colonne `code_ba`, et toute lecture/ecriture y est
+- Cloisonnement des donnees : les tables `histo`, `modeles` et `param`
+  portent desormais une colonne `code_ba`, et toute lecture/ecriture y est
   systematiquement filtree par le CODE_BA de l'utilisateur connecte -
   jamais une valeur choisie par le navigateur (voir `services/ramasse.py`,
-  `services/magasins.py`, `services/epuration.py`). La gestion des
-  fournisseurs/articles/types (table `param`) reste en revanche un
-  referentiel **partage** entre tous les sites, comme dans l'original.
-- **Migration de base necessaire** : executez `migration_login_multi_ba.sql`
-  sur votre base MySQL existante (une seule fois) avant de deployer cette
-  version - il cree la table `user` et ajoute la colonne `code_ba` aux
-  tables `histo`/`modeles`. Les lignes deja presentes dans ces 2 tables
-  sont automatiquement rattachees a CODE_BA = '58' (nom_BA = 'BA 58') par
-  le script, pour ne rien perdre de l'historique existant.
+  `services/magasins.py`, `services/epuration.py`, `services/
+  parametres.py`). Sur la table `param` : **Fournisseurs et Types de
+  ramasse sont desormais propres a chaque site** (chaque site cree/gere sa
+  propre liste, invisible des autres) ; **seuls les Articles restent un
+  referentiel partage** entre tous les sites (exception explicitement
+  demandee - `code_ba` reste a NULL pour ces lignes et n'est jamais pris en
+  compte).
+- **Migration de base necessaire, en 2 scripts** : executez, dans l'ordre,
+  `migration_login_multi_ba.sql` puis `migration_param_code_ba.sql` sur
+  votre base MySQL existante (une seule fois chacun) avant de deployer
+  cette version :
+  - le premier cree la table `user` et ajoute la colonne `code_ba` aux
+    tables `histo`/`modeles` (leurs lignes existantes sont rattachees a
+    CODE_BA = '58', nom_BA = 'BA 58') ;
+  - le second ajoute la colonne `code_ba` a `param`, rattache les
+    Fournisseurs et Types de ramasse existants a CODE_BA = '58', et laisse
+    les Articles a NULL (referentiel partage).
+  Rien de tout cela n'est perdu : c'est uniquement le cloisonnement qui
+  devient actif, sur des donnees deja en place.
 
 ## Ce qui n'est PAS encore dans cette version (a faire dans un 2e temps, si besoin)
 
@@ -127,16 +142,17 @@ Le schema MySQL est le meme que celui de l'appli desktop : si la base
 `yvallet_base` existe deja (celle utilisee par ramasse10_sql.py), rien a
 importer. Sinon, importer `Create_yvallet_base_WithData.sql` comme avant.
 
-Puis, dans tous les cas (base neuve ou existante), executer
-`migration_login_multi_ba.sql` **une seule fois** pour ajouter
-l'authentification multi-site (table `user`, colonne `code_ba` sur
-`histo`/`modeles` - voir le Lot 5 plus haut) :
+Puis, dans tous les cas (base neuve ou existante), executer les 2 scripts
+de migration ci-dessous, **dans l'ordre, chacun une seule fois**, pour
+ajouter l'authentification multi-site et le cloisonnement de `param` (voir
+le Lot 5 plus haut) :
 
 ```bash
 mysql -u root -p yvallet_base < migration_login_multi_ba.sql
+mysql -u root -p yvallet_base < migration_param_code_ba.sql
 ```
 
-Au premier demarrage de l'application apres cette migration, un compte
+Au premier demarrage de l'application apres ces migrations, un compte
 administrateur par defaut est cree automatiquement (`yvmaison@free.fr` /
 `admin` / CODE_BA `00`) - connectez-vous et changez son mot de passe tout
 de suite (menu Utilisateurs), puis creez un compte par site.
@@ -192,7 +208,9 @@ commande, telechargement), et authentification multi-site (creation/
 modification/suppression de compte, connexion/deconnexion, "mot de passe
 oublie", reservation du menu Utilisateurs et de la Sauvegarde a
 l'administrateur, cloisonnement des donnees d'un site a l'autre pour les
-magasins/l'historique). Comme cet environnement de developpement n'a acces
+magasins/l'historique/les fournisseurs/les types de ramasse, et le
+caractere bien partage entre tous les sites des articles). Comme cet
+environnement de developpement n'a acces
 ni a un vrai serveur MySQL ni a `mysqldump`, les tests utilisent une base
 sqlite3 en memoire qui rejoue exactement les memes requetes SQL
 (`tests/db_shim.py`), et un `mysqldump` simule pour la sauvegarde :
@@ -202,7 +220,7 @@ python3 tests/test_workflow.py
 python3 tests/test_admin.py
 ```
 
-Les 89 tests (16 + 73) passent. Avant la mise en production, faites tout de
+Les 99 tests (17 + 82) passent. Avant la mise en production, faites tout de
 meme un essai manuel complet avec votre vraie base MySQL locale et un vrai
 `mysqldump` (le connecteur MySQL n'a pas pu etre installe dans cet
 environnement de developpement, faute d'acces reseau — a verifier avec
@@ -219,6 +237,20 @@ environnement de developpement, faute d'acces reseau — a verifier avec
   meme serveur sans jamais voir les magasins ou l'historique les uns des
   autres, et plusieurs postes d'un meme site peuvent saisir des magasins
   differents en meme temps sans se marcher dessus.
+- **Ecran de saisie - nom du type de ramasse affiche** : `detail.html` et
+  `confirmer_fin.html` affichent desormais le libelle du type de ramasse
+  (ex: "Ramasse BA"), et non plus son code brut ("BA") comme auparavant.
+- **Ecran de saisie par magasin - impossible de quitter par le menu** :
+  corrige un vrai piege signale par l'utilisateur - la saisie du magasin
+  affiche n'est enregistree qu'au clic sur Enregistrer/Suivant/Precedent/
+  Terminer, donc cliquer sur un lien du menu (Magasins, Fournisseurs...) ou
+  sur "Se deconnecter" pendant la saisie d'un magasin faisait perdre la
+  ligne en cours sans avertissement. Le menu, le lien "Ramasse journaliere"
+  et "Se deconnecter" sont desormais masques tant que l'ecran de saisie par
+  magasin (`/detail`) est affiche : seuls les boutons "Quitter" et
+  "Terminer la journee" permettent d'en sortir. Les autres ecrans (choix du
+  type/date, confirmation de fin de journee, administration) ne sont pas
+  concernes, rien n'y est modifiable sans passer par un bouton "Enregistrer".
 - **Protection contre la modification d'une ligne d'un autre site** :
   fonctionnalite absente de l'original (qui n'avait pas cette notion).
   L'enregistrement d'une ligne de saisie (`save_lines`) verifie desormais

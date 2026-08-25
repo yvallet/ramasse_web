@@ -136,6 +136,7 @@ table.grille-admin th { background: var(--bleu); color: #fff; }
 table.grille-admin td.col-actions { white-space: nowrap; width: 1%; }
 table.grille-admin td.col-actions form { display: inline-block; margin-left: 0.4rem; }
 table.grille-admin input[type=text] { width: 100%; padding: 0.3rem; }
+table.grille-admin select { width: 100%; padding: 0.3rem; font: inherit; }
 
 .aide { color: #555; font-size: 0.9rem; margin-top: -0.5rem; }
 

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Ramasse {{ code_ram }} - {{ date_norm }}{% endblock %}
+{% block title %}Ramasse {{ nom_ram }} - {{ date_norm }}{% endblock %}
 {% block content %}
 <div class="detail-layout">
 
   <aside class="liste-magasins">
-    <h2>{{ code_ram }} - {{ date_norm }}</h2>
+    <h2>{{ nom_ram }} - {{ date_norm }}</h2>
     <ul>
       {% for mag, nom in scheduled %}
         <li>
@@ -28,7 +28,7 @@
     {% endif %}
 
     <form method="post" action="{{ url_for('detail_quitter') }}" id="form-quitter">
-      <button type="submit" class="bouton bouton-quitter">Quitter</button>
+      <button type="submit" class="bouton bouton-quitter" title="Abandon sans export">Quitter</button>
     </form>
   </aside>
 
@@ -87,7 +87,8 @@
                   formaction="{{ url_for('detail_save') }}" {{ 'disabled' if not has_next }}>Suivant &raquo;</button>
 
           <button type="submit" name="action" value="save_current"
-                  formaction="{{ url_for('detail_terminer') }}" class="bouton-valide">Terminer la journee</button>
+                  formaction="{{ url_for('detail_terminer') }}" class="bouton-valide"
+                  title="Fin avec export des ecritures">Terminer la journee</button>
         </div>
       </form>
     {% endif %}

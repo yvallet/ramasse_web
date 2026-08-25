@@ -17,7 +17,7 @@ import sqlite3
 # nouvelle valeur", exactement comme NULL. sqlite ne fait pas cette
 # conversion automatiquement pour un INTEGER PRIMARY KEY AUTOINCREMENT :
 # on l'emule ici, dans le shim de test uniquement.
-_TABLES_AVEC_ID_EXPLICITE = ("insert into histo", "insert into `user`")
+_TABLES_AVEC_ID_EXPLICITE = ("insert into histo", "insert into `user`", "insert into param")
 
 
 class ShimCursor:
@@ -78,7 +78,7 @@ create table modeles (
 );
 create table param (
   id integer primary key autoincrement,
-  code_type text, code text, libelle text
+  code_ba text, code_type text, code text, libelle text
 );
 create table `user` (
   id integer primary key autoincrement,
@@ -96,12 +96,19 @@ def build_test_db():
     raw = sqlite3.connect(":memory:")
     raw.executescript(SCHEMA)
 
-    # -- type de ramasse (referentiel partage, pas de CODE_BA) --
-    raw.execute("insert into param (code_type, code, libelle) values ('T','BA','Ramasse BA')")
+    # -- type de ramasse (propre au site '58', comme les fournisseurs ci-dessous) --
+    raw.execute(
+        "insert into param (code_ba, code_type, code, libelle) values (?, 'T', 'BA', 'Ramasse BA')",
+        (CODE_BA_TEST,),
+    )
 
-    # -- fournisseurs et articles references par les modeles ci-dessous (referentiel partage) --
+    # -- fournisseurs (propres au site '58') references par les modeles ci-dessous --
     for code, libelle in [("02580004", "Leclerc Drive"), ("02580038", "Intermarche Sauvigny")]:
-        raw.execute("insert into param (code_type, code, libelle) values ('F', ?, ?)", (code, libelle))
+        raw.execute(
+            "insert into param (code_ba, code_type, code, libelle) values (?, 'F', ?, ?)",
+            (CODE_BA_TEST, code, libelle),
+        )
+    # -- articles (referentiel PARTAGE entre tous les sites : code_ba reste NULL) --
     for code, libelle in [
         ("0119000", "Pain - Viennoiserie"), ("4520000", "Fruits-Legumes Non Transformes"),
         ("4620001", "Viande - Poisson"), ("4320001", "Produits Laitiers"),

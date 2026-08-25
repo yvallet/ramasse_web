@@ -45,15 +45,36 @@ class ControleError(Exception):
 
 # ----------------------------- Types de ramasse -------------------------
 
-def list_types(conn):
+def list_types(conn, code_ba):
     """
-    param.code_type = 'T'  ->  [(code, libelle), ...] (ex: BA, BOUL, ELOI, CLAM).
-    Referentiel PARTAGE entre tous les sites (pas de CODE_BA sur `param`) :
-    voir services/parametres.py.
+    param.code_type = 'T'  ->  [(code, libelle), ...] (ex: BA, BOUL, ELOI, CLAM)
+    pour le site `code_ba`. Les types de ramasse sont desormais PROPRES A
+    CHAQUE SITE (fonctionnalite absente de l'original) : voir
+    services/parametres.py.
     """
     cur = conn.cursor()
-    cur.execute("select code, libelle from param where code_type = %s order by code", ("T",))
+    cur.execute(
+        "select code, libelle from param where code_ba = %s and code_type = %s order by code",
+        (code_ba, "T"),
+    )
     return cur.fetchall()
+
+
+def nom_type_ramasse(conn, code_ba, code_ram):
+    """
+    Libelle du type de ramasse `code_ram` pour ce site (ex: 'BA' ->
+    'Ramasse BA'), pour l'afficher a la place du code brut sur les ecrans
+    de saisie (fonctionnalite absente de l'original). Si le type a ete
+    supprime entre-temps (ou n'existe pas), on retombe sur le code lui-meme
+    plutot que de faire echouer l'affichage.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        "select libelle from param where code_ba = %s and code_type = %s and code = %s",
+        (code_ba, "T", code_ram),
+    )
+    row = cur.fetchone()
+    return row[0] if row else code_ram
 
 
 # ----------------------------- Suggestion de date ------------------------

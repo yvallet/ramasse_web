@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% block title %}{{ "Nouveau magasin" if mode == "creation" else "Modifier un magasin" }}{% endblock %}
 {% block content %}
+
+{% macro options_articles(selected) %}
+  <option value="">-- choisir un article --</option>
+  {% for code, libelle in articles %}
+    <option value="{{ code }}" data-libelle="{{ libelle }}" {% if selected == code %}selected{% endif %}>{{ code }} : {{ libelle }}</option>
+  {% endfor %}
+{% endmacro %}
+
+{% macro options_fournisseurs(selected) %}
+  <option value="">-- choisir un fournisseur --</option>
+  {% for code, libelle in fournisseurs %}
+    <option value="{{ code }}" {% if selected == code %}selected{% endif %}>{{ code }} : {{ libelle }}</option>
+  {% endfor %}
+{% endmacro %}
+
 <h2>{{ "Creation d'un magasin" if mode == "creation" else "Modification d'un magasin" }}</h2>
 
 <form method="post" id="form-magasin">
@@ -49,23 +64,30 @@
   </div>
 
   <h3>Articles collectes</h3>
+  <p class="aide">
+    Le code article est choisi dans la liste des articles (referentiel commun
+    a tous les BA) ; le code fournisseur, dans la liste des fournisseurs de
+    votre BA.
+    {% if not articles %}Aucun article n'existe encore : creez-en d'abord via <a href="{{ url_for('admin.parametres_liste', slug='articles') }}">Gestion des articles</a>.{% endif %}
+    {% if not fournisseurs %}Aucun fournisseur n'existe encore pour votre BA : creez-en d'abord via <a href="{{ url_for('admin.parametres_liste', slug='fournisseurs') }}">Gestion des fournisseurs</a>.{% endif %}
+  </p>
   <table class="grille-admin" id="table-lignes">
     <thead>
       <tr>
-        <th>Code article (7 car.)</th>
+        <th>Code article</th>
         <th>Designation</th>
         <th>Depot</th>
-        <th>Code fournisseur (8 car.)</th>
+        <th>Code fournisseur</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {% for l in lignes %}
         <tr>
-          <td><input type="text" name="codart" maxlength="7" value="{{ l.codart or '' }}"></td>
+          <td><select name="codart" class="select-article">{{ options_articles(l.codart) }}</select></td>
           <td><input type="text" name="libart" value="{{ l.libart or '' }}"></td>
           <td><input type="text" name="depot" maxlength="3" value="{{ l.depot or '' }}"></td>
-          <td><input type="text" name="codfour" maxlength="8" value="{{ l.codfour or '' }}"></td>
+          <td><select name="codfour" class="select-fournisseur">{{ options_fournisseurs(l.codfour) }}</select></td>
           <td><button type="button" class="bouton bouton-quitter bouton-retirer-ligne">Retirer</button></td>
         </tr>
       {% endfor %}
@@ -75,10 +97,10 @@
 
   <template id="modele-ligne">
     <tr>
-      <td><input type="text" name="codart" maxlength="7" value=""></td>
+      <td><select name="codart" class="select-article">{{ options_articles(None) }}</select></td>
       <td><input type="text" name="libart" value=""></td>
       <td><input type="text" name="depot" maxlength="3" value=""></td>
-      <td><input type="text" name="codfour" maxlength="8" value=""></td>
+      <td><select name="codfour" class="select-fournisseur">{{ options_fournisseurs(None) }}</select></td>
       <td><button type="button" class="bouton bouton-quitter bouton-retirer-ligne">Retirer</button></td>
     </tr>
   </template>
