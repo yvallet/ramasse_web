@@ -224,9 +224,11 @@ class FlaskRoutesSmokeTests(unittest.TestCase):
         self.conn = build_test_db()
         self.code_ba = CODE_BA_TEST
         import app as app_module
+        import auth
         self.app_module = app_module
         app_module.db.get_db = lambda: self.conn  # monkeypatch : pas de vrai MySQL
-        app_module.app.config.update(TESTING=True)
+        app_module.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+        auth._reset_tentatives()  # anti-force-brute : etat en memoire, isole entre tests
         self.client = app_module.app.test_client()
 
         # Authentification (fonctionnalite absente de l'original) : toutes

@@ -17,6 +17,7 @@
           <a href="{{ url_for('admin.parametres_liste', slug=slug, editer=code) }}" class="bouton">Modifier</a>
           <form method="post" action="{{ url_for('admin.parametres_supprimer', slug=slug, code=code) }}"
                 class="form-suppression" data-confirm="Supprimer {{ code }} - {{ libelle }} ?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="bouton bouton-quitter">Supprimer</button>
           </form>
         </td>
@@ -30,6 +31,7 @@
 {% if fiche_edition %}
   <h3>Modifier {{ fiche_edition.code }}</h3>
   <form method="post" action="{{ url_for('admin.parametres_modifier', slug=slug, code=fiche_edition.code) }}" class="champs-entete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="champ">
       <label>Code</label>
       <input type="text" value="{{ fiche_edition.code }}" disabled>
@@ -46,6 +48,7 @@
 {% else %}
   <h3>Ajouter</h3>
   <form method="post" action="{{ url_for('admin.parametres_ajouter', slug=slug) }}" class="champs-entete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="champ">
       <label for="code_ajout">Code</label>
       <input type="text" name="code" id="code_ajout" required>

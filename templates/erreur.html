@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Erreur {{ code }}{% endblock %}
+{% block content %}
+<div class="page-connexion">
+  <h2>Erreur {{ code }}</h2>
+  <p class="aide">{{ message }}</p>
+  <p class="aide">
+    <a href="{{ url_for('saisie') }}">Retour a l'accueil</a>
+  </p>
+</div>
+{% endblock %}

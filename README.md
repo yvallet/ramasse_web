@@ -87,15 +87,15 @@ d'etre connecte :
   **a changer immediatement** apres la premiere connexion (menu
   Utilisateurs). Les comptes des sites sont ensuite crees par
   l'administrateur depuis cet ecran.
-- "Mot de passe oublie" : **version simplifiee, choisie deliberement**, qui
-  ne necessite pas de serveur d'envoi d'email a configurer. L'utilisateur
-  saisit son login puis definit directement un nouveau mot de passe, sans
-  lien de verification envoye par email. C'est moins sur qu'un vrai flux
-  par email (n'importe qui connaissant l'adresse d'un utilisateur peut
-  reinitialiser son mot de passe) - a garder en tete si l'application
-  devient accessible publiquement ; un vrai envoi d'email pourra etre
-  ajoute plus tard sans tout reecrire (seule la route `/mot-de-passe-oublie`
-  serait a changer).
+- "Mot de passe oublie" : l'utilisateur saisit son login, recoit (si le
+  compte existe) un e-mail avec un lien de reinitialisation signe, valable
+  1 heure (`auth.py`, `services/mail.py`). Sans serveur SMTP configure
+  (`SMTP_HOST` absent du `.env` - le cas par defaut en local), le lien
+  n'est pas perdu : il est journalise dans `logs/app.log`. Remplace
+  l'ancienne version simplifiee (login + nouveau mot de passe sur le meme
+  ecran, sans verification) qui laissait quiconque connaissant l'adresse
+  d'un compte reinitialiser son mot de passe - voir "Mise en production"
+  plus bas.
 - Cloisonnement des donnees : les tables `histo`, `modeles` et `param`
   portent desormais une colonne `code_ba`, et toute lecture/ecriture y est
   systematiquement filtree par le CODE_BA de l'utilisateur connecte -
@@ -154,29 +154,28 @@ mysql -u root -p yvallet_base < migration_param_code_ba.sql
 
 Au premier demarrage de l'application apres ces migrations, un compte
 administrateur par defaut est cree automatiquement (`yvmaison@free.fr` /
-`admin` / CODE_BA `00`) - connectez-vous et changez son mot de passe tout
-de suite (menu Utilisateurs), puis creez un compte par site.
+CODE_BA `00`) - connectez-vous et changez son mot de passe tout de suite
+(menu Utilisateurs), puis creez un compte par site. En local
+(`RAMASSE_ENV` non defini), son mot de passe est `admin` par defaut ; en
+production, voir "Mise en production" plus bas (`ADMIN_INITIAL_PASSWORD`).
 
 ## Log des erreurs d'execution
 
 Il y a deux niveaux :
 
-- **Console** : tant que vous lancez l'appli avec `python3 app.py`, chaque
-  requete et chaque erreur s'affichent dans le terminal ; et comme
-  `debug=True`, une erreur non geree affiche aussi sa pile d'appels
-  directement dans le navigateur (pratique pendant les tests, a desactiver
-  avant un usage en production - voir plus bas).
+- **Console** : tant que vous lancez l'appli avec `python3 app.py` en local
+  (`RAMASSE_ENV` non defini ou `local`), chaque requete et chaque erreur
+  s'affichent dans le terminal, et le mode debug de Flask affiche aussi la
+  pile d'appels directement dans le navigateur en cas d'erreur (pratique
+  pendant les tests). Ce mode debug se desactive automatiquement des que
+  `RAMASSE_ENV=production` (voir "Mise en production" plus bas) - il ne
+  doit jamais rester actif face a des utilisateurs autres que vous.
 - **Fichier persistant** : `logs/app.log`, a cote de `app.py` (cree
   automatiquement au demarrage, avec rotation - 5 fichiers de 1 Mo max).
   C'est l'equivalent du `LOG.log` de l'original (ecrit par `get_logger()`
   dans `outils.py`). Toute saisie refusee (quantite/rebut invalide, rebut >
   quantite...) y est journalisee avec le magasin et la date concernes,
   ainsi que toute erreur non geree.
-
-Pour un usage en production (plusieurs postes), pensez a passer
-`debug=False` dans `app.run(...)` (fin de `app.py`) ou, mieux, a lancer
-l'appli avec un vrai serveur WSGI (voir plus bas) : le mode debug de Flask
-ne doit pas rester actif face a des utilisateurs autres que vous.
 
 ## Lancer l'application
 
@@ -209,8 +208,12 @@ modification/suppression de compte, connexion/deconnexion, "mot de passe
 oublie", reservation du menu Utilisateurs et de la Sauvegarde a
 l'administrateur, cloisonnement des donnees d'un site a l'autre pour les
 magasins/l'historique/les fournisseurs/les types de ramasse, et le
-caractere bien partage entre tous les sites des articles). Comme cet
-environnement de developpement n'a acces
+caractere bien partage entre tous les sites des articles), ainsi que le
+durcissement pour une exposition sur Internet (protection CSRF, en-tetes de
+securite, anti-force-brute, cycle complet de reinitialisation de mot de
+passe par lien e-mail signe, compte administrateur initial parametrable -
+voir "Mise en production" plus bas). Comme cet environnement de
+developpement n'a acces
 ni a un vrai serveur MySQL ni a `mysqldump`, les tests utilisent une base
 sqlite3 en memoire qui rejoue exactement les memes requetes SQL
 (`tests/db_shim.py`), et un `mysqldump` simule pour la sauvegarde :
@@ -220,11 +223,27 @@ python3 tests/test_workflow.py
 python3 tests/test_admin.py
 ```
 
-Les 99 tests (17 + 82) passent. Avant la mise en production, faites tout de
+Les 108 tests (17 + 91) passent. Avant la mise en production, faites tout de
 meme un essai manuel complet avec votre vraie base MySQL locale et un vrai
 `mysqldump` (le connecteur MySQL n'a pas pu etre installe dans cet
 environnement de developpement, faute d'acces reseau — a verifier avec
 `pip install -r requirements.txt` chez vous).
+
+## Mise en production (serveur expose sur Internet)
+
+L'application est prete a etre exposee sur Internet (ex. hebergement
+mutualise o2switch) via la variable `RAMASSE_ENV=production` : cookies de
+session securises, mode debug desactive, protection CSRF (Flask-WTF),
+anti-force-brute sur la connexion et le mot de passe oublie, en-tetes de
+securite HTTP, reinitialisation de mot de passe par un vrai lien e-mail
+signe (au lieu du flux simplifie sans verification utilise en local), et
+compte administrateur initial parametrable via `ADMIN_INITIAL_PASSWORD`
+(aucun compte "admin"/"admin" cree par defaut en production). Voir toutes
+les variables dans `.env.example` et le guide pas-a-pas complet dans
+[DEPLOIEMENT_O2SWITCH.md](DEPLOIEMENT_O2SWITCH.md).
+
+Cette version deploiement vit sur la branche `deploy` du depot : la branche
+`main` reste la version reseau local, inchangee.
 
 ## Differences volontaires par rapport a l'original
 

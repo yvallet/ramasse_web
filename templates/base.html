@@ -32,6 +32,7 @@
         <span>{{ current_user.nom_ba }} ({{ current_user.login }})</span>
         {% if not verrouiller_navigation %}
           <form method="post" action="{{ url_for('auth.logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="bouton bouton-mini">Se deconnecter</button>
           </form>
         {% endif %}

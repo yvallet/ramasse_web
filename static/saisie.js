@@ -26,5 +26,16 @@
       champ.addEventListener("input", maj);
       champ.addEventListener("blur", maj);
     }
+
+    // Soumission automatique du formulaire de type de ramasse (equivalent
+    // du onchange inline retire de saisie.html - une politique CSP stricte
+    // (script-src 'self') interdit les gestionnaires d'evenements inline).
+    var typeSelect = document.getElementById("type");
+    var formType = document.getElementById("form-type");
+    if (typeSelect && formType) {
+      typeSelect.addEventListener("change", function () {
+        formType.submit();
+      });
+    }
   });
 })();

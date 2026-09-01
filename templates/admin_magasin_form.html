@@ -19,6 +19,7 @@
 <h2>{{ "Creation d'un magasin" if mode == "creation" else "Modification d'un magasin" }}</h2>
 
 <form method="post" id="form-magasin">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="champs-entete">
     <div class="champ">
       <label for="code_ram">Type de ramasse</label>

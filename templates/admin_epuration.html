@@ -9,6 +9,7 @@
 </p>
 
 <form method="post" class="champs-entete">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="champ">
     <label for="date_limite">Date limite (jj/mm/aaaa)</label>
     <input type="text" name="date_limite" id="date_limite" value="{{ date_limite }}" required>
@@ -21,6 +22,7 @@
 {% if confirmation %}
   <form method="post" class="form-suppression"
         data-confirm="Confirmer la suppression definitive de {{ confirmation.nb }} ligne(s) d'historique anterieures au {{ confirmation.date_norm }} ?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="date_limite" value="{{ confirmation.date_norm }}">
     <p>
       <strong>{{ confirmation.nb }}</strong> ligne(s) d'historique seront supprimees

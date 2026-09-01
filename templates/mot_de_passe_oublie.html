@@ -4,25 +4,17 @@
 <div class="page-connexion">
   <h2>Mot de passe oublie</h2>
   <p class="aide">
-    Saisissez votre login (email) et le nouveau mot de passe que vous
-    souhaitez utiliser. Aucune verification par email n'est effectuee :
-    si ce login existe, son mot de passe est change immediatement.
+    Saisissez votre login (email). Si ce compte existe, un lien pour choisir
+    un nouveau mot de passe vous est envoye par e-mail, valable 1 heure.
   </p>
   <form method="post" class="champs-entete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="champ">
       <label for="login">Login (adresse email)</label>
       <input type="email" name="login" id="login" value="{{ login }}" required autofocus>
     </div>
-    <div class="champ">
-      <label for="nouveau_mot_de_passe">Nouveau mot de passe</label>
-      <input type="password" name="nouveau_mot_de_passe" id="nouveau_mot_de_passe" required>
-    </div>
-    <div class="champ">
-      <label for="confirmation">Confirmer le mot de passe</label>
-      <input type="password" name="confirmation" id="confirmation" required>
-    </div>
     <div class="champ actions">
-      <button type="submit" class="bouton bouton-valide">Definir ce mot de passe</button>
+      <button type="submit" class="bouton bouton-valide">Envoyer le lien</button>
     </div>
   </form>
   <p class="aide">

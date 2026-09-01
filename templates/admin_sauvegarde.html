@@ -10,6 +10,7 @@
 </p>
 
 <form method="post" class="actions">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <button type="submit" class="bouton bouton-valide">Creer une sauvegarde maintenant</button>
 </form>
 

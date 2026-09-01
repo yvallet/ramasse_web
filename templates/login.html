@@ -4,6 +4,7 @@
 <div class="page-connexion">
   <h2>Connexion</h2>
   <form method="post" class="champs-entete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="champ">
       <label for="login">Login (adresse email)</label>
       <input type="email" name="login" id="login" value="{{ login }}" required autofocus>

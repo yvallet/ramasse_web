@@ -517,10 +517,12 @@ class AdminRoutesSmokeTests(unittest.TestCase):
     def setUp(self):
         self.conn = build_test_db()
         import app as app_module
+        import auth
         self.app_module = app_module
         app_module.db.get_db = lambda: self.conn
         self.dossier_csv = tempfile.mkdtemp()
-        app_module.app.config.update(TESTING=True, CSV_EXPORT_DIR=self.dossier_csv)
+        app_module.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, CSV_EXPORT_DIR=self.dossier_csv)
+        auth._reset_tentatives()  # anti-force-brute : etat en memoire, isole entre tests
 
         su.creer(self.conn, "site58@test.fr", "motdepasse", CODE_BA_TEST, "BA 58")
         su.assurer_admin_par_defaut(self.conn)  # yvmaison@free.fr / admin / '00' / Administrateur
@@ -765,6 +767,135 @@ class AdminRoutesSmokeTests(unittest.TestCase):
         })
         self.assertEqual(r.status_code, 200)  # reaffiche le formulaire, pas de redirection
         self.assertIn("adresse mail valide".encode(), r.data)
+
+
+class SecuriteTests(unittest.TestCase):
+    """
+    Durcissement pour une exposition sur Internet (voir DEPLOIEMENT_O2SWITCH.md),
+    fonctionnalites absentes de l'original (application desktop mono-poste,
+    jamais exposee sur un reseau) : protection CSRF (Flask-WTF), en-tetes de
+    securite HTTP, anti-force-brute sur /login et /mot-de-passe-oublie,
+    reinitialisation de mot de passe par lien e-mail signe (remplace
+    l'ancien flux sans verification), et compte administrateur initial
+    parametrable via ADMIN_INITIAL_PASSWORD plutot qu'un mot de passe
+    "admin" fixe et connu de tous.
+    """
+
+    def setUp(self):
+        self.conn = build_test_db()
+        import app as app_module
+        import auth
+        self.app_module = app_module
+        self.auth = auth
+        app_module.db.get_db = lambda: self.conn
+        app_module.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+        auth._reset_tentatives()
+        su.creer(self.conn, "site58@test.fr", "motdepasse", CODE_BA_TEST, "BA 58")
+        self.client = app_module.app.test_client()
+
+    def tearDown(self):
+        # Isole les autres tests du meme process d'une eventuelle
+        # activation du CSRF ou d'un etat de blocage laisses par ce test.
+        self.app_module.app.config.update(WTF_CSRF_ENABLED=False)
+        self.auth._reset_tentatives()
+
+    def test_csrf_refuse_un_post_sans_jeton(self):
+        self.app_module.app.config.update(WTF_CSRF_ENABLED=True)
+        r = self.client.post("/login", data={"login": "site58@test.fr", "mot_de_passe": "motdepasse"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_entetes_de_securite_presentes(self):
+        r = self.client.get("/login")
+        self.assertEqual(r.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(r.headers.get("X-Frame-Options"), "DENY")
+        self.assertIn("default-src 'self'", r.headers.get("Content-Security-Policy", ""))
+
+    def test_login_bloque_apres_trop_de_tentatives_puis_debloque(self):
+        for _ in range(self.auth.MAX_TENTATIVES):
+            r = self.client.post("/login", data={"login": "site58@test.fr", "mot_de_passe": "faux"})
+            self.assertEqual(r.status_code, 200)
+
+        r = self.client.post("/login", data={"login": "site58@test.fr", "mot_de_passe": "motdepasse"})
+        self.assertEqual(r.status_code, 429)  # bloque meme avec le bon mot de passe
+
+        self.auth._reset_tentatives()
+        r = self.client.post("/login", data={"login": "site58@test.fr", "mot_de_passe": "motdepasse"})
+        self.assertEqual(r.status_code, 302)
+
+    def test_mot_de_passe_oublie_envoie_un_lien_par_email_si_le_compte_existe(self):
+        import services.mail as smail
+        appels = []
+        original = smail.envoyer
+        smail.envoyer = lambda config, dest, sujet, corps, logger=None: appels.append((dest, corps)) or True
+        try:
+            r = self.client.post("/mot-de-passe-oublie", data={"login": "site58@test.fr"}, follow_redirects=True)
+        finally:
+            smail.envoyer = original
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(appels), 1)
+        self.assertEqual(appels[0][0], "site58@test.fr")
+        self.assertIn("/reinitialiser-mot-de-passe/", appels[0][1])
+
+    def test_mot_de_passe_oublie_meme_message_et_aucun_envoi_si_compte_inconnu(self):
+        import services.mail as smail
+        appels = []
+        original = smail.envoyer
+        smail.envoyer = lambda *a, **kw: appels.append(a) or True
+        try:
+            r = self.client.post("/mot-de-passe-oublie", data={"login": "inconnu@test.fr"}, follow_redirects=True)
+        finally:
+            smail.envoyer = original
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(appels, [])
+        self.assertIn("e-mail avec un lien".encode(), r.data)
+
+    def test_cycle_complet_de_reinitialisation_par_lien(self):
+        import re
+        import services.mail as smail
+        liens = []
+
+        def capture(config, dest, sujet, corps, logger=None):
+            liens.append(re.search(r"http\S+", corps).group(0))
+            return True
+
+        original = smail.envoyer
+        smail.envoyer = capture
+        try:
+            self.client.post("/mot-de-passe-oublie", data={"login": "site58@test.fr"})
+        finally:
+            smail.envoyer = original
+        self.assertEqual(len(liens), 1)
+        chemin = "/" + liens[0].split("://", 1)[1].split("/", 1)[1]
+
+        r = self.client.get(chemin)
+        self.assertEqual(r.status_code, 200)
+
+        r = self.client.post(chemin, data={
+            "nouveau_mot_de_passe": "nouveaumdp", "confirmation": "nouveaumdp",
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+
+        client2 = self.app_module.app.test_client()
+        r = client2.post("/login", data={"login": "site58@test.fr", "mot_de_passe": "motdepasse"})
+        self.assertEqual(r.status_code, 200)  # reaffiche login.html : ancien mot de passe refuse
+        r = client2.post("/login", data={"login": "site58@test.fr", "mot_de_passe": "nouveaumdp"})
+        self.assertEqual(r.status_code, 302)  # nouveau mot de passe accepte
+
+    def test_jeton_rejoue_apres_changement_de_mot_de_passe_refuse(self):
+        with self.app_module.app.app_context():
+            token = self.auth._generer_jeton("site58@test.fr", su.fragment_hash(self.conn, "site58@test.fr"))
+        su.changer_mot_de_passe(self.conn, "site58@test.fr", "autremotdepasse")
+        r = self.client.get("/reinitialiser-mot-de-passe/%s" % token, follow_redirects=True)
+        self.assertIn("plus valable".encode(), r.data)
+
+    def test_jeton_invalide_ou_falsifie_refuse(self):
+        r = self.client.get("/reinitialiser-mot-de-passe/pasunjetonvalide", follow_redirects=True)
+        self.assertIn("invalide ou a expire".encode(), r.data)
+
+    def test_admin_initial_cree_avec_le_mot_de_passe_fourni(self):
+        su.assurer_admin_par_defaut(self.conn, "unmotdepasselong")
+        self.assertIsNotNone(su.verifier_identifiants(self.conn, "yvmaison@free.fr", "unmotdepasselong"))
+        self.assertIsNone(su.verifier_identifiants(self.conn, "yvmaison@free.fr", "admin"))
 
 
 if __name__ == "__main__":

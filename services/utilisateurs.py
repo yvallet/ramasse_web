@@ -170,10 +170,13 @@ def supprimer(conn, login):
     conn.commit()
 
 
-def assurer_admin_par_defaut(conn):
+def assurer_admin_par_defaut(conn, mot_de_passe=None):
     """
-    Cree le compte administrateur par defaut (yvmaison@free.fr / admin /
-    CODE_BA='00' / nom_ba='Administrateur') s'il n'existe pas encore.
+    Cree le compte administrateur par defaut (yvmaison@free.fr / CODE_BA='00'
+    / nom_ba='Administrateur') s'il n'existe pas encore. `mot_de_passe` est
+    "admin" si non fourni (comportement historique, utilise en local) ; en
+    production, app.py fournit explicitement ADMIN_INITIAL_PASSWORD (et
+    n'appelle meme pas cette fonction si cette variable est absente).
     Appelee au demarrage de l'application (voir app.py). Idempotente : ne
     fait rien si le compte existe deja. Si la table `user` n'existe pas
     encore (migration SQL pas encore executee), l'appelant doit intercepter
@@ -184,7 +187,22 @@ def assurer_admin_par_defaut(conn):
     cur = conn.cursor()
     cur.execute(
         "insert into `user` (id, login, mot_de_passe, code_ba, nom_ba) values (%s, %s, %s, %s, %s)",
-        (0, "yvmaison@free.fr", generate_password_hash("admin"), CODE_ADMIN, "Administrateur"),
+        (0, "yvmaison@free.fr", generate_password_hash(mot_de_passe or "admin"), CODE_ADMIN, "Administrateur"),
     )
     conn.commit()
     return True
+
+
+def fragment_hash(conn, login):
+    """
+    Derniers caracteres du hash de mot de passe stocke pour `login` (ou None
+    si le compte n'existe pas). Utilise pour lier un jeton de
+    reinitialisation de mot de passe (voir auth.py) au mot de passe courant :
+    des que le mot de passe change, le hash change, et tout jeton emis avant
+    devient invalide - sans avoir besoin d'une table dediee aux jetons.
+    """
+    login = _normaliser_login(login)
+    cur = conn.cursor()
+    cur.execute("select mot_de_passe from `user` where login = %s", (login,))
+    row = cur.fetchone()
+    return row[0][-12:] if row else None

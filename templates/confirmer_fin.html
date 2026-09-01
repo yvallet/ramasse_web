@@ -12,6 +12,7 @@
 <p>Vous confirmez la fin de journee malgre ces magasins vides ?</p>
 
 <form method="post" action="{{ url_for('detail_terminer') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="confirmed" value="1">
   <div class="actions">
     <a href="{{ url_for('detail') }}" class="bouton bouton-quitter">Annuler, revenir a la saisie</a>

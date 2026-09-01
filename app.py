@@ -24,6 +24,7 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask_wtf import CSRFProtect
 
 import auth
 import db
@@ -32,12 +33,18 @@ from services import dateutils as du
 from services import ramasse as rs
 from services import utilisateurs as su
 
+csrf = CSRFProtect()
+
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    _verifier_secrets_prod(app)
+    _configurer_proxy(app)
     db.init_app(app)
+    csrf.init_app(app)
     _configurer_logs(app)
+    _configurer_securite(app)
 
     from admin import admin_bp
     from auth import auth_bp
@@ -47,6 +54,73 @@ def create_app():
     _assurer_admin_par_defaut(app)
 
     return app
+
+
+def _verifier_secrets_prod(app):
+    """
+    Fail-fast : en production (RAMASSE_ENV=production), refuse de demarrer
+    si SECRET_KEY ou MYSQL_PASSWORD sont absents/laisses a leur valeur de
+    developpement - mieux vaut un demarrage en echec, explicite, qu'une
+    application exposee sur Internet avec une cle de session devinable.
+    """
+    if not app.config.get("IS_PROD"):
+        return
+    cle = app.config.get("SECRET_KEY") or ""
+    if not cle or cle == "dev-insecure-key-not-for-production":
+        raise RuntimeError(
+            "RAMASSE_ENV=production mais SECRET_KEY n'est pas definie (ou a sa valeur de "
+            "developpement). Definissez une cle aleatoire dans .env : "
+            "python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    if not app.config.get("MYSQL_PASSWORD"):
+        raise RuntimeError(
+            "RAMASSE_ENV=production mais MYSQL_PASSWORD n'est pas definie dans .env."
+        )
+
+
+def _configurer_proxy(app):
+    """
+    Derriere Apache/Passenger (o2switch), Flask ne voit par defaut ni la
+    vraie IP du client, ni le schema HTTPS d'origine. ProxyFix restaure ces
+    informations a partir des en-tetes X-Forwarded-* poses par le proxy -
+    indispensable pour l'anti-force-brute (voir auth.py, base sur l'IP
+    client) et pour que les liens generes (reinitialisation de mot de
+    passe) pointent en https.
+    """
+    if not app.config.get("BEHIND_PROXY"):
+        return
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
+
+def _configurer_securite(app):
+    """
+    En-tetes de securite HTTP de base (defense en profondeur, absents de
+    l'original qui n'etait pas une application web) et pages d'erreur
+    propres : avec DEBUG=False (production), Flask n'affiche plus la pile
+    d'appels dans le navigateur - il faut donc des pages 404/500 lisibles.
+    """
+    @app.after_request
+    def _entetes_securite(reponse):
+        reponse.headers["X-Content-Type-Options"] = "nosniff"
+        reponse.headers["X-Frame-Options"] = "DENY"
+        reponse.headers["Referrer-Policy"] = "same-origin"
+        reponse.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data:; base-uri 'none'; "
+            "form-action 'self'; frame-ancestors 'none'"
+        )
+        if request.is_secure:
+            reponse.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return reponse
+
+    @app.errorhandler(404)
+    def _page_non_trouvee(e):
+        return render_template("erreur.html", code=404, message="Page introuvable."), 404
+
+    @app.errorhandler(500)
+    def _erreur_serveur(e):
+        app.logger.error("Erreur non geree", exc_info=True)
+        return render_template("erreur.html", code=500, message="Une erreur inattendue s'est produite."), 500
 
 
 def _configurer_logs(app):
@@ -79,11 +153,24 @@ def _assurer_admin_par_defaut(app):
     l'application : si la table `user` n'existe pas encore, ou si la base
     n'est pas joignable, l'erreur est journalisee et ignoree (le compte
     sera cree au prochain redemarrage, une fois la migration executee).
+
+    En production (RAMASSE_ENV=production), le mot de passe "admin" connu
+    de tous n'est jamais utilise : le compte n'est cree que si
+    ADMIN_INITIAL_PASSWORD est defini dans .env, avec ce mot de passe-la. A
+    retirer du .env une fois le mot de passe change (menu Utilisateurs).
     """
+    mot_de_passe = app.config.get("ADMIN_INITIAL_PASSWORD")
+    if app.config.get("IS_PROD") and not mot_de_passe:
+        app.logger.warning(
+            "Aucun compte administrateur par defaut cree (production) : definissez "
+            "ADMIN_INITIAL_PASSWORD dans .env puis redemarrez l'application."
+        )
+        return
+
     with app.app_context():
         try:
             conn = db.get_db()
-            if su.assurer_admin_par_defaut(conn):
+            if su.assurer_admin_par_defaut(conn, mot_de_passe):
                 app.logger.info(
                     "Compte administrateur par defaut cree (yvmaison@free.fr) "
                     "- changez son mot de passe des la premiere connexion."
@@ -456,4 +543,4 @@ def detail_terminer():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=app.config["DEBUG"])

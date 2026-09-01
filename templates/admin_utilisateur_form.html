@@ -4,6 +4,7 @@
 <h2>{{ "Creation d'un utilisateur" if mode == "creation" else "Modification d'un utilisateur" }}</h2>
 
 <form method="post" class="champs-entete">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="champ">
     <label for="login">Login (adresse email)</label>
     {% if mode == "creation" %}

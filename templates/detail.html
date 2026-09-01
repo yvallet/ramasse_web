@@ -17,6 +17,7 @@
 
     {% if addable %}
       <form method="post" action="{{ url_for('detail_add_store') }}" class="ajout-magasin">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="nouveau_magasin">Ajouter un magasin non prevu</label>
         <select name="nouveau_magasin" id="nouveau_magasin">
           {% for mag, nom in addable %}
@@ -28,6 +29,7 @@
     {% endif %}
 
     <form method="post" action="{{ url_for('detail_quitter') }}" id="form-quitter">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="bouton bouton-quitter" title="Abandon sans export">Quitter</button>
     </form>
   </aside>
@@ -39,6 +41,7 @@
       <h2>{{ nom_magasin }}</h2>
 
       <form method="post" action="{{ url_for('detail_save') }}" id="form-detail">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="magasin" value="{{ magasin }}">
 
         <table class="grille">

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Nouveau mot de passe{% endblock %}
+{% block content %}
+<div class="page-connexion">
+  <h2>Choisir un nouveau mot de passe</h2>
+  <form method="post" class="champs-entete">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="champ">
+      <label for="nouveau_mot_de_passe">Nouveau mot de passe</label>
+      <input type="password" name="nouveau_mot_de_passe" id="nouveau_mot_de_passe" required autofocus>
+    </div>
+    <div class="champ">
+      <label for="confirmation">Confirmer le mot de passe</label>
+      <input type="password" name="confirmation" id="confirmation" required>
+    </div>
+    <div class="champ actions">
+      <button type="submit" class="bouton bouton-valide">Definir ce mot de passe</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
