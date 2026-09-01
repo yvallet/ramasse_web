@@ -27,6 +27,19 @@ def nom_fichier(horodatage=None):
     return PREFIXE + horodatage.strftime("%d%m%Y_%H%M") + SUFFIXE
 
 
+def _date_depuis_nom(nom):
+    """
+    Horodatage encode dans un nom `sauvegarde-jjmmaaaa_hhmm.sql`, ou None si
+    le nom ne suit pas ce format. C'est l'heure voulue de la sauvegarde,
+    plus fiable que la date de modification du fichier (qui change si le
+    fichier est copie/deplace).
+    """
+    try:
+        return datetime.strptime(nom[len(PREFIXE):-len(SUFFIXE)], "%d%m%Y_%H%M")
+    except ValueError:
+        return None
+
+
 def lister(repertoire):
     """
     Sauvegardes deja presentes dans `repertoire`, les plus recentes en
@@ -39,10 +52,11 @@ def lister(repertoire):
         if nom.startswith(PREFIXE) and nom.endswith(SUFFIXE):
             chemin = os.path.join(repertoire, nom)
             infos = os.stat(chemin)
+            date_mtime = datetime.fromtimestamp(infos.st_mtime)
             entrees.append({
                 "nom": nom,
                 "taille": infos.st_size,
-                "date": datetime.fromtimestamp(infos.st_mtime),
+                "date": _date_depuis_nom(nom) or date_mtime,
             })
     entrees.sort(key=lambda e: e["date"], reverse=True)
     return entrees
