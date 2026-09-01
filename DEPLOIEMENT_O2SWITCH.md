@@ -72,12 +72,21 @@ pip install -r requirements.txt
 ## 6. Base de donnees MySQL
 
 Dans cPanel : creer une base et un utilisateur MySQL (prefixes automatiquement
-par le nom du compte), puis via phpMyAdmin :
+par le nom du compte), puis via phpMyAdmin, importer
+`Create_yvallet_base_WithData.sql`.
 
-1. Si base neuve : importer `Create_yvallet_base_WithData.sql`.
-2. **Dans l'ordre**, une seule fois chacun :
-   - `migration_login_multi_ba.sql`
-   - `migration_param_code_ba.sql`
+Ce fichier n'est **pas** dans le depot Git (il contient des donnees reelles,
+dont la table `user`) : recuperez la version a jour sur le poste local, ou
+regenerez-la avec `mysqldump` (voir `services/sauvegarde.py` pour la ligne de
+commande exacte). Il s'importe seul :
+
+```
+mysql -u <compte>_ramasse -p <compte>_yvallet_base < Create_yvallet_base_WithData.sql
+```
+
+Ce dump **inclut deja** les colonnes `code_ba` et la table `user` : ne PAS
+rejouer `migration_login_multi_ba.sql` / `migration_param_code_ba.sql`
+par-dessus (ils ne servent qu'a faire evoluer une ancienne base mono-BA).
 
 ## 7. Repertoire d'export
 

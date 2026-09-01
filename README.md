@@ -107,10 +107,12 @@ d'etre connecte :
   referentiel partage** entre tous les sites (exception explicitement
   demandee - `code_ba` reste a NULL pour ces lignes et n'est jamais pris en
   compte).
-- **Migration de base necessaire, en 2 scripts** : executez, dans l'ordre,
-  `migration_login_multi_ba.sql` puis `migration_param_code_ba.sql` sur
-  votre base MySQL existante (une seule fois chacun) avant de deployer
-  cette version :
+- **Migration de base, en 2 scripts** (uniquement pour faire evoluer une
+  base d'une ancienne version mono-BA - une base neuve importee depuis
+  `Create_yvallet_base_WithData.sql` est deja a jour, voir Installation) :
+  executez, dans l'ordre, `migration_login_multi_ba.sql` puis
+  `migration_param_code_ba.sql` sur votre base MySQL existante (une seule
+  fois chacun) avant de deployer cette version :
   - le premier cree la table `user` et ajoute la colonne `code_ba` aux
     tables `histo`/`modeles` (leurs lignes existantes sont rattachees a
     CODE_BA = '58', nom_BA = 'BA 58') ;
@@ -138,21 +140,32 @@ copy .env.example .env            # Windows ; sous Linux/Mac : cp .env.example .
 # éditer .env : mot de passe MySQL, dossier d'export CSV, etc.
 ```
 
-Le schema MySQL est le meme que celui de l'appli desktop : si la base
-`yvallet_base` existe deja (celle utilisee par ramasse10_sql.py), rien a
-importer. Sinon, importer `Create_yvallet_base_WithData.sql` comme avant.
+Deux cas :
 
-Puis, dans tous les cas (base neuve ou existante), executer les 2 scripts
-de migration ci-dessous, **dans l'ordre, chacun une seule fois**, pour
-ajouter l'authentification multi-site et le cloisonnement de `param` (voir
-le Lot 5 plus haut) :
+- **Base neuve** : importer `Create_yvallet_base_WithData.sql` (dump complet,
+  structure + donnees, regenere avec `mysqldump` - non versionne sur GitHub
+  car il contient des donnees reelles, voir `.gitignore`). **Ce dump inclut
+  deja** les colonnes `code_ba` (tables `histo`/`modeles`/`param`) et la
+  table `user` : il ne faut donc **pas** executer les 2 scripts de migration
+  ci-dessous par-dessus (ils echoueraient, colonnes/table deja presentes).
 
-```bash
-mysql -u root -p yvallet_base < migration_login_multi_ba.sql
-mysql -u root -p yvallet_base < migration_param_code_ba.sql
-```
+  ```bash
+  mysql -u root -p yvallet_base < Create_yvallet_base_WithData.sql
+  ```
 
-Au premier demarrage de l'application apres ces migrations, un compte
+- **Base existante d'une ancienne version mono-BA** (celle utilisee par
+  `ramasse10_sql.py`, sans `code_ba` ni table `user`) : executer les 2
+  scripts de migration ci-dessous, **dans l'ordre, chacun une seule fois**,
+  pour ajouter l'authentification multi-site et le cloisonnement de `param`
+  (voir le Lot 5 plus haut) :
+
+  ```bash
+  mysql -u root -p yvallet_base < migration_login_multi_ba.sql
+  mysql -u root -p yvallet_base < migration_param_code_ba.sql
+  ```
+
+Au premier demarrage de l'application (base neuve deja a jour, ou apres ces
+migrations), un compte
 administrateur par defaut est cree automatiquement (`yvmaison@free.fr` /
 CODE_BA `00`) - connectez-vous et changez son mot de passe tout de suite
 (menu Utilisateurs), puis creez un compte par site. En local

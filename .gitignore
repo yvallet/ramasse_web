@@ -6,9 +6,15 @@ __pycache__/
 # Secrets : mot de passe MySQL, cle secrete Flask -> ne JAMAIS pousser sur GitHub
 .env
 
+# Dump complet de la base (structure + donnees reelles, dont la table `user`
+# avec les hash de mots de passe) -> local uniquement, jamais sur GitHub.
+# Regenerer avec mysqldump (voir services/sauvegarde.py / DEPLOIEMENT_O2SWITCH.md).
+Create_yvallet_base_WithData.sql
+
 # Fichiers generes a l'execution
 logs/
 export_csv/
+sauvegarde-*.sql
 
 # Divers
 .DS_Store
