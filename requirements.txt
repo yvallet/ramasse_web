@@ -1,6 +1,10 @@
-Flask==3.1.3
-Flask-WTF==1.3.0
-Werkzeug==3.1.8
-WTForms==3.2.2
-mysql-connector-python==26.7.0
-python-dotenv==1.2.3
+# Versions compatibles Python 3.8+ (hebergement mutualise o2switch : le
+# Python propose par "Setup Python App" peut etre < 3.10). Elles s'installent
+# aussi sur Python 3.11+ sans probleme - garder local et serveur alignes en
+# faisant `pip install -r requirements.txt` des deux cotes.
+Flask==3.0.3
+Flask-WTF==1.2.2
+Werkzeug==3.0.6
+WTForms==3.1.2
+mysql-connector-python==8.4.0
+python-dotenv==1.0.1
