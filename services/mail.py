@@ -45,9 +45,14 @@ def envoyer(config, destinataire, sujet, corps_texte, logger=None):
     message.set_content(corps_texte)
 
     port = int(config.get("SMTP_PORT") or 587)
+    # Port 465 = TLS implicite des la connexion (SMTPS) : il faut
+    # SMTP_SSL, pas SMTP + starttls() (qui suppose une connexion en clair
+    # suivie d'une commande STARTTLS - le protocole du port 587). Utiliser
+    # SMTP + starttls() sur le port 465 echoue silencieusement ou se bloque.
+    classe_smtp = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
     try:
-        with smtplib.SMTP(hote, port, timeout=10) as serveur:
-            if config.get("SMTP_STARTTLS", True):
+        with classe_smtp(hote, port, timeout=10) as serveur:
+            if port != 465 and config.get("SMTP_STARTTLS", True):
                 serveur.starttls()
             if config.get("SMTP_USER"):
                 serveur.login(config["SMTP_USER"], config.get("SMTP_PASSWORD") or "")
