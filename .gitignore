@@ -16,6 +16,10 @@ logs/
 export_csv/
 sauvegarde-*.sql
 
+# Genere par cPanel "Setup Python App" (Passenger) sur le serveur o2switch :
+# specifique a la machine (chemins, config locale) -> ne pas versionner.
+Passengerfile.json
+
 # Divers
 .DS_Store
 Thumbs.db
