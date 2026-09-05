@@ -36,6 +36,7 @@ from services import magasins as sm  # noqa: E402
 from services import epuration as se  # noqa: E402
 from services import sauvegarde as sv  # noqa: E402
 from services import utilisateurs as su  # noqa: E402
+from services import mail as smail  # noqa: E402
 
 CODE_BA_AUTRE = "99"  # deuxieme site, utilise pour les tests de cloisonnement
 
@@ -327,11 +328,73 @@ class EpurationTests(unittest.TestCase):
 
 
 class _FauxResultat:
-    """Imite subprocess.CompletedProcess pour les tests (pas de vrai mysqldump ici)."""
+    """Imite subprocess.CompletedProcess pour les tests (pas de vrai mysqldump/sendmail ici)."""
 
     def __init__(self, returncode=0, stderr=b""):
         self.returncode = returncode
         self.stderr = stderr
+
+
+class MailTests(unittest.TestCase):
+    """
+    services/mail.py - transport "sendmail" alternatif (remise locale via
+    le binaire sendmail plutot qu'une connexion reseau SMTP - voir la note
+    dans services/mail.py, ajoutee suite a un hebergement o2switch ou le
+    process applicatif ne pouvait pas sortir en SMTP). `executer` est
+    injectable comme pour services/sauvegarde.py.
+    """
+
+    def test_sendmail_reussi_transmet_le_message_par_lentree_standard(self):
+        appels = []
+
+        def executer_ok(commande, input, stdout, stderr, timeout):
+            appels.append((commande, input))
+            return _FauxResultat(returncode=0)
+
+        ok = smail.envoyer(
+            {"MAIL_TRANSPORT": "sendmail", "MAIL_SENDMAIL_PATH": "/usr/sbin/sendmail", "SMTP_FROM": "a@b.fr"},
+            "dest@test.fr", "Sujet du message", "Corps du message",
+            executer=executer_ok,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(len(appels), 1)
+        commande, entree = appels[0]
+        self.assertEqual(commande, ["/usr/sbin/sendmail", "-t", "-i"])
+        self.assertIn(b"Corps du message", entree)
+        self.assertIn(b"dest@test.fr", entree)
+
+    def test_sendmail_chemin_par_defaut_si_non_configure(self):
+        appels = []
+
+        def executer_ok(commande, **kw):
+            appels.append(commande)
+            return _FauxResultat(returncode=0)
+
+        smail.envoyer({"MAIL_TRANSPORT": "sendmail"}, "dest@test.fr", "Sujet", "Corps", executer=executer_ok)
+        self.assertEqual(appels[0][0], "/usr/sbin/sendmail")
+
+    def test_sendmail_echec_leve_runtimeerror(self):
+        def executer_echoue(commande, **kw):
+            return _FauxResultat(returncode=1, stderr=b"adresse invalide")
+
+        with self.assertRaises(RuntimeError):
+            smail.envoyer({"MAIL_TRANSPORT": "sendmail"}, "dest@test.fr", "Sujet", "Corps", executer=executer_echoue)
+
+    def test_sendmail_introuvable_leve_runtimeerror(self):
+        def executer_absent(commande, **kw):
+            raise FileNotFoundError()
+
+        with self.assertRaises(RuntimeError):
+            smail.envoyer({"MAIL_TRANSPORT": "sendmail"}, "dest@test.fr", "Sujet", "Corps", executer=executer_absent)
+
+    def test_smtp_reste_le_transport_par_defaut_sans_smtp_host_ne_leve_pas(self):
+        appele = []
+        ok = smail.envoyer(
+            {}, "dest@test.fr", "Sujet", "Corps",
+            logger=type("L", (), {"warning": staticmethod(lambda *a, **kw: appele.append(True))})(),
+        )
+        self.assertFalse(ok)
+        self.assertTrue(appele)
 
 
 class SauvegardeTests(unittest.TestCase):

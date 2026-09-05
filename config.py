@@ -99,9 +99,17 @@ class Config:
     BEHIND_PROXY = _bool(os.environ.get("BEHIND_PROXY"), defaut=IS_PROD)
 
     # --- Envoi d'e-mail (reinitialisation de mot de passe, voir auth.py) #
-    # Si SMTP_HOST est absent, aucun e-mail n'est envoye : le lien de
-    # reinitialisation est simplement journalise (logs/app.log), pratique
-    # en local sans serveur SMTP a configurer.
+    # MAIL_TRANSPORT=sendmail : remise locale via le binaire sendmail au
+    # lieu d'une connexion reseau SMTP (voir services/mail.py) - utile si
+    # l'hebergeur bloque les connexions sortantes du process applicatif
+    # vers le serveur SMTP (constate sur o2switch : timeout systematique
+    # depuis l'app, alors que le meme SMTP_HOST/port repond en SSH).
+    MAIL_TRANSPORT = (os.environ.get("MAIL_TRANSPORT") or "smtp").strip().lower()
+    MAIL_SENDMAIL_PATH = os.environ.get("MAIL_SENDMAIL_PATH") or "/usr/sbin/sendmail"
+
+    # Si SMTP_HOST est absent (transport "smtp", par defaut), aucun e-mail
+    # n'est envoye : le lien de reinitialisation est simplement journalise
+    # (logs/app.log), pratique en local sans serveur SMTP a configurer.
     SMTP_HOST = os.environ.get("SMTP_HOST") or None
     SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
     SMTP_USER = os.environ.get("SMTP_USER") or None
